@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stitchforge"
+version = "0.1.0"
+description = "Deterministic core for the StitchForge cross-stitch pattern workbench"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "colour-science>=0.4.6,<0.5",
+  "defusedxml>=0.7,<1",
+  "fastapi>=0.116,<1",
+  "jsonschema[format]>=4.25,<5",
+  "numpy>=2.3,<3",
+  "pillow>=12.1,<13",
+  "reportlab>=4.4,<5",
+  "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+stitchforge = "stitchforge.cli:main"
+stitchforge-api = "stitchforge_api.main:run"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "pdfplumber>=0.11,<1",
+  "pypdf>=6,<7",
+  "pytest>=8.4,<9",
+  "pytest-cov>=7,<8",
+  "ruff>=0.13,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "packages/api/src/stitchforge_api",
+  "packages/engine/src/stitchforge",
+  "packages/storage/src/stitchforge_storage",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas/pattern-document.v0.1.schema.json" = "stitchforge/resources/pattern-document.v0.1.schema.json"
+"schemas/material-catalog.v0.1.schema.json" = "stitchforge/resources/material-catalog.v0.1.schema.json"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["dist", "output", "tmp"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

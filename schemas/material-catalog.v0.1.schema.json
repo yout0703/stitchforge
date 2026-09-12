@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stitchforge:schema:material-catalog:0.1.0",
+  "title": "StitchForge MaterialCatalog v0.1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "snapshot_id", "source", "materials"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "source": {"$ref": "#/$defs/source"},
+    "materials": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/material"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "locator", "description", "permission_status"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "locator": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "description": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "permission_status": {
+          "enum": ["unverified", "private_use", "redistributable", "restricted"]
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "brand", "series", "code", "name", "display_srgb",
+        "color_status", "available", "default_strands"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "brand": {"type": "string", "minLength": 1, "maxLength": 128},
+        "series": {"type": "string", "minLength": 1, "maxLength": 128},
+        "code": {"type": "string", "minLength": 1, "maxLength": 64},
+        "name": {"type": "string", "maxLength": 256},
+        "display_srgb": {
+          "anyOf": [
+            {"type": "string", "pattern": "^#[0-9A-F]{6}$"},
+            {"type": "null"}
+          ]
+        },
+        "color_status": {
+          "enum": ["approximate", "measured", "synthetic", "unknown"]
+        },
+        "available": {"type": "boolean"},
+        "default_strands": {"type": "integer", "minimum": 1, "maximum": 6}
+      }
+    }
+  }
+}

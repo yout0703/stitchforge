@@ -1,0 +1,558 @@
+{
+  "source": "/private/var/folders/jq/q6dqh9452811qbhd87pd31w40000gn/T/codex-clipboard-95e0b35d-d594-428d-ab44-274d43bcaaf8.png",
+  "title": "幸运小兔与四叶草·实操版",
+  "grid": {
+    "width": 120,
+    "height": 180
+  },
+  "detected_native_grid": {
+    "width": 77,
+    "height": 116
+  },
+  "region_consistency": "strong",
+  "color_profile": "faithful",
+  "color_fidelity": {
+    "valid": true,
+    "errors": [],
+    "mean_delta_e": 4.726,
+    "median_delta_e": 3.714,
+    "p90_delta_e": 8.939,
+    "tone_correlation": 0.9425,
+    "reviewed_stitches": 7559
+  },
+  "color_fragments": {
+    "single_cell_color_islands": 258,
+    "one_to_three_cell_color_islands": 380
+  },
+  "full_stitches": 7559,
+  "palette_count": 23,
+  "cloth_rgb": [
+    236,
+    234,
+    232
+  ],
+  "design_bbox": [
+    13,
+    23,
+    114,
+    153
+  ],
+  "backstitch_candidate_cells": 0,
+  "backstitch_segments": 0,
+  "fabric": {
+    "count": 14,
+    "strands": 2
+  },
+  "finished_size_cm": {
+    "width": 21.77,
+    "height": 32.66
+  },
+  "black_guard": {
+    "approved": false,
+    "dmc_310_count": 0,
+    "hex_000000_count": 0
+  },
+  "target_relative_candidate_score": 0.9,
+  "budget": [
+    {
+      "width": 50,
+      "height": 75,
+      "raw_score": 0.6425005317869374,
+      "relative_score": 0.9072569803011388,
+      "stitches": 1471,
+      "colors": 22
+    },
+    {
+      "width": 62,
+      "height": 93,
+      "raw_score": 0.6607120969204409,
+      "relative_score": 0.9329730206344079,
+      "stitches": 2338,
+      "colors": 24
+    },
+    {
+      "width": 69,
+      "height": 104,
+      "raw_score": 0.6699243550313863,
+      "relative_score": 0.9459813919306088,
+      "stitches": 2664,
+      "colors": 22
+    },
+    {
+      "width": 77,
+      "height": 116,
+      "raw_score": 0.6766820147587339,
+      "relative_score": 0.9555236936950674,
+      "stitches": 3411,
+      "colors": 23
+    },
+    {
+      "width": 120,
+      "height": 180,
+      "raw_score": 0.7081792102317882,
+      "relative_score": 1.0,
+      "stitches": 7559,
+      "colors": 23
+    }
+  ],
+  "top_grid_candidates": [
+    {
+      "width": 77,
+      "height": 116,
+      "texture_clarity": 6.3566328414194
+    },
+    {
+      "width": 82,
+      "height": 123,
+      "texture_clarity": 4.745388452668305
+    },
+    {
+      "width": 41,
+      "height": 62,
+      "texture_clarity": 4.6972892612592805
+    },
+    {
+      "width": 76,
+      "height": 114,
+      "texture_clarity": 1.9905296665305507
+    },
+    {
+      "width": 81,
+      "height": 122,
+      "texture_clarity": 1.2600489939126016
+    },
+    {
+      "width": 128,
+      "height": 192,
+      "texture_clarity": 1.1206887584036027
+    },
+    {
+      "width": 55,
+      "height": 82,
+      "texture_clarity": 1.0948497249060636
+    },
+    {
+      "width": 57,
+      "height": 86,
+      "texture_clarity": 1.0851463741923686
+    },
+    {
+      "width": 60,
+      "height": 90,
+      "texture_clarity": 1.0303297772890407
+    },
+    {
+      "width": 56,
+      "height": 84,
+      "texture_clarity": 1.0266014273968664
+    }
+  ],
+  "palette": [
+    {
+      "code": "543",
+      "name": "Beige Brown Ult Vy Lt",
+      "rgb": [
+        242,
+        227,
+        206
+      ],
+      "source_rgb": [
+        237,
+        223,
+        203
+      ],
+      "stitch_count": 2448,
+      "hex": "F2E3CE"
+    },
+    {
+      "code": "3033",
+      "name": "Very Light Mocha Brown",
+      "rgb": [
+        219,
+        199,
+        173
+      ],
+      "source_rgb": [
+        223,
+        202,
+        175
+      ],
+      "stitch_count": 1777,
+      "hex": "DBC7AD"
+    },
+    {
+      "code": "842",
+      "name": "Very Light Beige Brown",
+      "rgb": [
+        204,
+        176,
+        148
+      ],
+      "source_rgb": [
+        205,
+        178,
+        145
+      ],
+      "stitch_count": 666,
+      "hex": "CCB094"
+    },
+    {
+      "code": "3024",
+      "name": "Brown Gray Vy Lt",
+      "rgb": [
+        235,
+        234,
+        231
+      ],
+      "source_rgb": [
+        227,
+        221,
+        214
+      ],
+      "stitch_count": 452,
+      "hex": "EBEAE7"
+    },
+    {
+      "code": "722",
+      "name": "Orange Spice Light",
+      "rgb": [
+        247,
+        151,
+        111
+      ],
+      "source_rgb": [
+        232,
+        145,
+        113
+      ],
+      "stitch_count": 386,
+      "hex": "F7976F"
+    },
+    {
+      "code": "950",
+      "name": "Light Desert Sand",
+      "rgb": [
+        229,
+        172,
+        141
+      ],
+      "source_rgb": [
+        234,
+        174,
+        144
+      ],
+      "stitch_count": 278,
+      "hex": "E5AC8D"
+    },
+    {
+      "code": "922",
+      "name": "Light Copper",
+      "rgb": [
+        221,
+        110,
+        76
+      ],
+      "source_rgb": [
+        226,
+        109,
+        77
+      ],
+      "stitch_count": 270,
+      "hex": "DD6E4C"
+    },
+    {
+      "code": "905",
+      "name": "Dark Parrot Green",
+      "rgb": [
+        70,
+        121,
+        36
+      ],
+      "source_rgb": [
+        92,
+        128,
+        46
+      ],
+      "stitch_count": 197,
+      "hex": "467924"
+    },
+    {
+      "code": "742",
+      "name": "Light Tangerine",
+      "rgb": [
+        253,
+        174,
+        60
+      ],
+      "source_rgb": [
+        235,
+        170,
+        66
+      ],
+      "stitch_count": 247,
+      "hex": "FDAE3C"
+    },
+    {
+      "code": "904",
+      "name": "Very Dark Parrot Green",
+      "rgb": [
+        56,
+        99,
+        37
+      ],
+      "source_rgb": [
+        64,
+        105,
+        37
+      ],
+      "stitch_count": 153,
+      "hex": "386325"
+    },
+    {
+      "code": "3347",
+      "name": "Medium Yellow Green",
+      "rgb": [
+        109,
+        150,
+        70
+      ],
+      "source_rgb": [
+        124,
+        149,
+        58
+      ],
+      "stitch_count": 95,
+      "hex": "6D9646"
+    },
+    {
+      "code": "3364",
+      "name": "Pine Green",
+      "rgb": [
+        131,
+        151,
+        95
+      ],
+      "source_rgb": [
+        129,
+        144,
+        80
+      ],
+      "stitch_count": 93,
+      "hex": "83975F"
+    },
+    {
+      "code": "803",
+      "name": "Baby Blue Ult Vy Dk",
+      "rgb": [
+        44,
+        89,
+        124
+      ],
+      "source_rgb": [
+        34,
+        86,
+        132
+      ],
+      "stitch_count": 99,
+      "hex": "2C597C"
+    },
+    {
+      "code": "3053",
+      "name": "Green Gray",
+      "rgb": [
+        156,
+        164,
+        130
+      ],
+      "source_rgb": [
+        166,
+        169,
+        130
+      ],
+      "stitch_count": 67,
+      "hex": "9CA482"
+    },
+    {
+      "code": "312",
+      "name": "Baby Blue Very Dark",
+      "rgb": [
+        53,
+        102,
+        139
+      ],
+      "source_rgb": [
+        60,
+        112,
+        156
+      ],
+      "stitch_count": 49,
+      "hex": "35668B"
+    },
+    {
+      "code": "334",
+      "name": "Medium Baby Blue",
+      "rgb": [
+        96,
+        133,
+        184
+      ],
+      "source_rgb": [
+        93,
+        143,
+        182
+      ],
+      "stitch_count": 54,
+      "hex": "6085B8"
+    },
+    {
+      "code": "3862",
+      "name": "Mocha Beige Dark",
+      "rgb": [
+        138,
+        110,
+        78
+      ],
+      "source_rgb": [
+        143,
+        112,
+        83
+      ],
+      "stitch_count": 37,
+      "hex": "8A6E4E"
+    },
+    {
+      "code": "3777",
+      "name": "Terra Cotta Vy Dk",
+      "rgb": [
+        134,
+        48,
+        34
+      ],
+      "source_rgb": [
+        139,
+        48,
+        25
+      ],
+      "stitch_count": 39,
+      "hex": "863022"
+    },
+    {
+      "code": "932",
+      "name": "Light Antique Blue",
+      "rgb": [
+        146,
+        160,
+        175
+      ],
+      "source_rgb": [
+        146,
+        165,
+        183
+      ],
+      "stitch_count": 50,
+      "hex": "92A0AF"
+    },
+    {
+      "code": "3031",
+      "name": "Mocha Brown Vy Dk",
+      "rgb": [
+        75,
+        60,
+        42
+      ],
+      "source_rgb": [
+        77,
+        54,
+        30
+      ],
+      "stitch_count": 39,
+      "hex": "4B3C2A"
+    },
+    {
+      "code": "676",
+      "name": "Light Old Gold",
+      "rgb": [
+        236,
+        191,
+        125
+      ],
+      "source_rgb": [
+        231,
+        186,
+        117
+      ],
+      "stitch_count": 23,
+      "hex": "ECBF7D"
+    },
+    {
+      "code": "3371",
+      "name": "Black Brown",
+      "rgb": [
+        30,
+        17,
+        8
+      ],
+      "source_rgb": [
+        31,
+        26,
+        17
+      ],
+      "stitch_count": 22,
+      "hex": "1E1108"
+    },
+    {
+      "code": "433",
+      "name": "Medium Brown",
+      "rgb": [
+        115,
+        66,
+        30
+      ],
+      "source_rgb": [
+        127,
+        74,
+        34
+      ],
+      "stitch_count": 18,
+      "hex": "73421E"
+    }
+  ],
+  "limitations": [
+    "Backstitch cells are flagged but no reviewed line plan was supplied.",
+    "DMC RGB references are approximate and require physical color-card review.",
+    "White-on-white stitches require human review."
+  ],
+  "recommended_balanced_grid": {
+    "width": 50,
+    "height": 75,
+    "relative_candidate_score": 0.9073,
+    "stitches": 1471
+  },
+  "oxs_validation": {
+    "valid": true,
+    "errors": [],
+    "palette_count": 23,
+    "stitch_count": 7559,
+    "backstitch_count": 0,
+    "black_palette_indices": []
+  },
+  "pdf_validation": {
+    "valid": true,
+    "errors": [],
+    "page_count": 10,
+    "file_size_bytes": 242251,
+    "codes_verified_in_grid": true
+  },
+  "symbol_pdf_validation": {
+    "valid": true,
+    "errors": [],
+    "page_count": 10,
+    "file_size_bytes": 161262,
+    "codes_verified_in_grid": false
+  },
+  "materials_validation": {
+    "valid": true,
+    "errors": [],
+    "row_count": 23
+  }
+}

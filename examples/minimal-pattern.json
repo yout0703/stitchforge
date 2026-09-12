@@ -1,0 +1,143 @@
+{
+  "schema_version": "0.1.0",
+  "required_features": [
+    "full_cross"
+  ],
+  "metadata": {
+    "pattern_id": "pattern_minimal",
+    "title": "4×3 非对称全针测试样例",
+    "author": "StitchForge",
+    "created_at": "2026-09-11T14:30:00Z",
+    "purpose": "test_fixture"
+  },
+  "grid": {
+    "width": 4,
+    "height": 3,
+    "origin": "top_left",
+    "subgrid_scale": 2
+  },
+  "fabric": {
+    "type": "aida",
+    "count": 14,
+    "count_unit": "cells_per_inch",
+    "worked_over": 1,
+    "display_srgb": "#DDD5C5",
+    "margins_mm": {
+      "top": 50,
+      "right": 50,
+      "bottom": 50,
+      "left": 50
+    }
+  },
+  "materials": [
+    {
+      "id": "m_black",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "BLACK",
+      "name": "测试黑色，非实体绣线色卡",
+      "color": {
+        "display_srgb": "#000000",
+        "status": "synthetic",
+        "source_ref": "src_fixture"
+      }
+    },
+    {
+      "id": "m_white",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "WHITE",
+      "name": "测试白色，非实体绣线色卡",
+      "color": {
+        "display_srgb": "#FFFFFF",
+        "status": "synthetic",
+        "source_ref": "src_fixture"
+      }
+    }
+  ],
+  "recipes": [
+    {
+      "id": "r_black_2",
+      "index": 1,
+      "components": [
+        {
+          "material_id": "m_black",
+          "strands": 2
+        }
+      ]
+    },
+    {
+      "id": "r_white_2",
+      "index": 2,
+      "components": [
+        {
+          "material_id": "m_white",
+          "strands": 2
+        }
+      ]
+    }
+  ],
+  "full_stitches": {
+    "encoding": "row-major-u16",
+    "top_leg": "slash",
+    "cells": [
+      1,
+      0,
+      2,
+      0,
+      0,
+      1,
+      2,
+      0,
+      2,
+      0,
+      0,
+      1
+    ]
+  },
+  "regions": [
+    {
+      "id": "locked_corner",
+      "name": "左上角针脚锁定",
+      "policy": "locked",
+      "spans": [
+        {
+          "row": 0,
+          "start_col": 0,
+          "end_col": 1
+        }
+      ]
+    }
+  ],
+  "legend": [
+    {
+      "recipe_id": "r_black_2",
+      "symbol_id": "s001"
+    },
+    {
+      "recipe_id": "r_white_2",
+      "symbol_id": "s002"
+    }
+  ],
+  "constraints": {
+    "color_budget": 2,
+    "metric_profile": "quality_4n_v1"
+  },
+  "provenance": {
+    "source_asset_hashes": [],
+    "engine_version": "manual-fixture-v1",
+    "catalog_snapshot_id": "synthetic_fixture_v1",
+    "rule_profile": "mvp_full_cross_v1",
+    "generation_config_hash": null,
+    "random_seed": null,
+    "ai_proposal_hash": null,
+    "sources": [
+      {
+        "id": "src_fixture",
+        "locator": "examples/minimal-pattern.json",
+        "description": "项目手工创建的非对称测试图与纯黑、纯白 RGB；无真实品牌对应，不代表实体色卡校准。",
+        "permission_status": "redistributable"
+      }
+    ]
+  }
+}

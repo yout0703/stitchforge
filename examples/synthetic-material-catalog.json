@@ -1,0 +1,89 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_id": "synthetic_basic_v1",
+  "source": {
+    "id": "src_synthetic_catalog",
+    "locator": "examples/synthetic-material-catalog.json",
+    "description": "项目人工定义的算法测试色，不对应任何实体绣线品牌或真实线号。",
+    "permission_status": "redistributable"
+  },
+  "materials": [
+    {
+      "id": "test_black",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "BLACK",
+      "name": "测试黑",
+      "display_srgb": "#000000",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_white",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "WHITE",
+      "name": "测试白",
+      "display_srgb": "#FFFFFF",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_red",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "RED",
+      "name": "测试红",
+      "display_srgb": "#D62828",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_green",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "GREEN",
+      "name": "测试绿",
+      "display_srgb": "#2A9D4B",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_blue",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "BLUE",
+      "name": "测试蓝",
+      "display_srgb": "#2457C5",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_yellow",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "YELLOW",
+      "name": "测试黄",
+      "display_srgb": "#F2C230",
+      "color_status": "synthetic",
+      "available": true,
+      "default_strands": 2
+    },
+    {
+      "id": "test_unknown",
+      "brand": "TEST",
+      "series": "Synthetic",
+      "code": "UNKNOWN",
+      "name": "无色值测试线",
+      "display_srgb": null,
+      "color_status": "unknown",
+      "available": true,
+      "default_strands": 2
+    }
+  ]
+}

@@ -1,0 +1,1821 @@
+{
+  "source_project": "/Users/linglin/projects/amazing-images-creator",
+  "samples": [
+    {
+      "id": "parakeets",
+      "legacy_suite": "cross-stitch-parakeets-fidelity-v2",
+      "files_sha256": {
+        "source.png": "43c6f5ec090f25465247f161264704fd813c5af1d9a66c12c83555b0704e78de",
+        "legacy-effect.png": "f6f543227e05403dc4dd3732799560fa586c3266feded645d03cdbaa48824de1",
+        "legacy-pattern.png": "51f5a74cbe5befd3b4765deca4300b70b452bea2970fbe43c9c93eb8aa992e2b",
+        "legacy-report.json": "313c25f25fae39f834dc96c915e5df01933f37e0811122cdfd9f991c70ddf241"
+      },
+      "legacy_report": {
+        "source": "/Users/linglin/Downloads/鹦鹉系列来了_1_🌟川流不息_来自小红书网页版.jpg",
+        "title": "春日双鹦鹉·忠实还原版",
+        "grid": {
+          "width": 120,
+          "height": 180
+        },
+        "detected_native_grid": {
+          "width": 68,
+          "height": 102
+        },
+        "region_consistency": "strong",
+        "color_profile": "faithful",
+        "color_fidelity": {
+          "valid": true,
+          "errors": [],
+          "mean_delta_e": 8.377,
+          "median_delta_e": 6.952,
+          "p90_delta_e": 14.992,
+          "tone_correlation": 0.8885,
+          "reviewed_stitches": 7265
+        },
+        "color_fragments": {
+          "single_cell_color_islands": 375,
+          "one_to_three_cell_color_islands": 573
+        },
+        "full_stitches": 7265,
+        "palette_count": 30,
+        "cloth_rgb": [
+          236,
+          235,
+          234
+        ],
+        "design_bbox": [
+          1,
+          36,
+          119,
+          150
+        ],
+        "backstitch_candidate_cells": 0,
+        "backstitch_segments": 0,
+        "fabric": {
+          "count": 14,
+          "strands": 2
+        },
+        "finished_size_cm": {
+          "width": 21.77,
+          "height": 32.66
+        },
+        "black_guard": {
+          "approved": false,
+          "dmc_310_count": 0,
+          "hex_000000_count": 0
+        },
+        "target_relative_candidate_score": 0.9,
+        "budget": [
+          {
+            "width": 44,
+            "height": 66,
+            "raw_score": 0.5144885414314068,
+            "relative_score": 0.874264949188166,
+            "stitches": 971,
+            "colors": 25
+          },
+          {
+            "width": 54,
+            "height": 81,
+            "raw_score": 0.5254819954187295,
+            "relative_score": 0.8929460095377104,
+            "stitches": 1409,
+            "colors": 28
+          },
+          {
+            "width": 61,
+            "height": 92,
+            "raw_score": 0.5368941482650129,
+            "relative_score": 0.9123385604398644,
+            "stitches": 1803,
+            "colors": 30
+          },
+          {
+            "width": 68,
+            "height": 102,
+            "raw_score": 0.5417781245757444,
+            "relative_score": 0.9206378498453354,
+            "stitches": 2260,
+            "colors": 30
+          },
+          {
+            "width": 120,
+            "height": 180,
+            "raw_score": 0.588481262927395,
+            "relative_score": 1.0,
+            "stitches": 7265,
+            "colors": 30
+          }
+        ],
+        "top_grid_candidates": [
+          {
+            "width": 68,
+            "height": 102,
+            "texture_clarity": 28.92212796429343
+          },
+          {
+            "width": 69,
+            "height": 104,
+            "texture_clarity": 9.266402602924607
+          },
+          {
+            "width": 46,
+            "height": 69,
+            "texture_clarity": 6.539929695451872
+          },
+          {
+            "width": 66,
+            "height": 99,
+            "texture_clarity": 6.534832789969721
+          },
+          {
+            "width": 48,
+            "height": 72,
+            "texture_clarity": 5.936674313112733
+          },
+          {
+            "width": 45,
+            "height": 68,
+            "texture_clarity": 5.788416178281319
+          },
+          {
+            "width": 47,
+            "height": 70,
+            "texture_clarity": 5.7031427409195565
+          },
+          {
+            "width": 49,
+            "height": 74,
+            "texture_clarity": 5.563022288077899
+          },
+          {
+            "width": 52,
+            "height": 78,
+            "texture_clarity": 5.3320557050381465
+          },
+          {
+            "width": 51,
+            "height": 76,
+            "texture_clarity": 5.2772114708049465
+          }
+        ],
+        "palette": [
+          {
+            "code": "453",
+            "name": "Shell Gray Light",
+            "rgb": [
+              215,
+              206,
+              203
+            ],
+            "source_rgb": [
+              218,
+              213,
+              209
+            ],
+            "stitch_count": 487,
+            "hex": "D7CECB"
+          },
+          {
+            "code": "776",
+            "name": "Medium Pink",
+            "rgb": [
+              246,
+              184,
+              187
+            ],
+            "source_rgb": [
+              235,
+              187,
+              189
+            ],
+            "stitch_count": 672,
+            "hex": "F6B8BB"
+          },
+          {
+            "code": "3354",
+            "name": "Dusty Rose Light",
+            "rgb": [
+              228,
+              166,
+              172
+            ],
+            "source_rgb": [
+              233,
+              160,
+              167
+            ],
+            "stitch_count": 649,
+            "hex": "E4A6AC"
+          },
+          {
+            "code": "470",
+            "name": "Avocado Grn Lt",
+            "rgb": [
+              148,
+              171,
+              79
+            ],
+            "source_rgb": [
+              160,
+              170,
+              45
+            ],
+            "stitch_count": 662,
+            "hex": "94AB4F"
+          },
+          {
+            "code": "996",
+            "name": "Medium Electric Blue",
+            "rgb": [
+              73,
+              168,
+              235
+            ],
+            "source_rgb": [
+              105,
+              164,
+              205
+            ],
+            "stitch_count": 539,
+            "hex": "49A8EB"
+          },
+          {
+            "code": "3347",
+            "name": "Medium Yellow Green",
+            "rgb": [
+              109,
+              150,
+              70
+            ],
+            "source_rgb": [
+              106,
+              143,
+              42
+            ],
+            "stitch_count": 521,
+            "hex": "6D9646"
+          },
+          {
+            "code": "995",
+            "name": "Dark Electric Blue",
+            "rgb": [
+              1,
+              97,
+              176
+            ],
+            "source_rgb": [
+              22,
+              94,
+              166
+            ],
+            "stitch_count": 368,
+            "hex": "0161B0"
+          },
+          {
+            "code": "3688",
+            "name": "Medium Mauve",
+            "rgb": [
+              220,
+              124,
+              134
+            ],
+            "source_rgb": [
+              226,
+              122,
+              137
+            ],
+            "stitch_count": 341,
+            "hex": "DC7C86"
+          },
+          {
+            "code": "973",
+            "name": "Bright Canary",
+            "rgb": [
+              253,
+              205,
+              44
+            ],
+            "source_rgb": [
+              231,
+              199,
+              61
+            ],
+            "stitch_count": 283,
+            "hex": "FDCD2C"
+          },
+          {
+            "code": "169",
+            "name": "Pewter Light",
+            "rgb": [
+              132,
+              132,
+              132
+            ],
+            "source_rgb": [
+              131,
+              137,
+              145
+            ],
+            "stitch_count": 296,
+            "hex": "848484"
+          },
+          {
+            "code": "03",
+            "name": "Medium Tin",
+            "rgb": [
+              176,
+              176,
+              181
+            ],
+            "source_rgb": [
+              170,
+              179,
+              189
+            ],
+            "stitch_count": 215,
+            "hex": "B0B0B5"
+          },
+          {
+            "code": "826",
+            "name": "Medium Blue",
+            "rgb": [
+              80,
+              117,
+              167
+            ],
+            "source_rgb": [
+              58,
+              127,
+              185
+            ],
+            "stitch_count": 197,
+            "hex": "5075A7"
+          },
+          {
+            "code": "3346",
+            "name": "Hunter Green",
+            "rgb": [
+              86,
+              116,
+              59
+            ],
+            "source_rgb": [
+              88,
+              110,
+              34
+            ],
+            "stitch_count": 151,
+            "hex": "56743B"
+          },
+          {
+            "code": "797",
+            "name": "Royal Blue",
+            "rgb": [
+              43,
+              50,
+              136
+            ],
+            "source_rgb": [
+              12,
+              64,
+              137
+            ],
+            "stitch_count": 183,
+            "hex": "2B3288"
+          },
+          {
+            "code": "581",
+            "name": "Moss Green",
+            "rgb": [
+              131,
+              138,
+              41
+            ],
+            "source_rgb": [
+              133,
+              134,
+              55
+            ],
+            "stitch_count": 187,
+            "hex": "838A29"
+          },
+          {
+            "code": "832",
+            "name": "Golden Olive",
+            "rgb": [
+              189,
+              155,
+              81
+            ],
+            "source_rgb": [
+              176,
+              153,
+              39
+            ],
+            "stitch_count": 197,
+            "hex": "BD9B51"
+          },
+          {
+            "code": "803",
+            "name": "Baby Blue Ult Vy Dk",
+            "rgb": [
+              44,
+              89,
+              124
+            ],
+            "source_rgb": [
+              62,
+              95,
+              127
+            ],
+            "stitch_count": 172,
+            "hex": "2C597C"
+          },
+          {
+            "code": "311",
+            "name": "Medium Navy Blue",
+            "rgb": [
+              0,
+              42,
+              100
+            ],
+            "source_rgb": [
+              28,
+              46,
+              64
+            ],
+            "stitch_count": 158,
+            "hex": "002A64"
+          },
+          {
+            "code": "434",
+            "name": "Light Brown",
+            "rgb": [
+              143,
+              83,
+              50
+            ],
+            "source_rgb": [
+              141,
+              90,
+              52
+            ],
+            "stitch_count": 167,
+            "hex": "8F5332"
+          },
+          {
+            "code": "801",
+            "name": "Dark Coffee Brown",
+            "rgb": [
+              97,
+              57,
+              29
+            ],
+            "source_rgb": [
+              102,
+              62,
+              36
+            ],
+            "stitch_count": 143,
+            "hex": "61391D"
+          },
+          {
+            "code": "335",
+            "name": "Rose",
+            "rgb": [
+              214,
+              61,
+              87
+            ],
+            "source_rgb": [
+              200,
+              78,
+              93
+            ],
+            "stitch_count": 145,
+            "hex": "D63D57"
+          },
+          {
+            "code": "3013",
+            "name": "Khaki Green Lt",
+            "rgb": [
+              185,
+              185,
+              130
+            ],
+            "source_rgb": [
+              190,
+              190,
+              133
+            ],
+            "stitch_count": 75,
+            "hex": "B9B982"
+          },
+          {
+            "code": "317",
+            "name": "Pewter Gray",
+            "rgb": [
+              108,
+              108,
+              108
+            ],
+            "source_rgb": [
+              101,
+              98,
+              99
+            ],
+            "stitch_count": 73,
+            "hex": "6C6C6C"
+          },
+          {
+            "code": "934",
+            "name": "Avocado Grn Black",
+            "rgb": [
+              49,
+              57,
+              25
+            ],
+            "source_rgb": [
+              53,
+              60,
+              26
+            ],
+            "stitch_count": 120,
+            "hex": "313919"
+          },
+          {
+            "code": "3863",
+            "name": "Mocha Beige Med",
+            "rgb": [
+              164,
+              131,
+              92
+            ],
+            "source_rgb": [
+              166,
+              142,
+              114
+            ],
+            "stitch_count": 83,
+            "hex": "A4835C"
+          },
+          {
+            "code": "356",
+            "name": "Medium Terra Cotta",
+            "rgb": [
+              191,
+              92,
+              75
+            ],
+            "source_rgb": [
+              209,
+              102,
+              83
+            ],
+            "stitch_count": 40,
+            "hex": "BF5C4B"
+          },
+          {
+            "code": "961",
+            "name": "Dusty Rose Dark",
+            "rgb": [
+              207,
+              115,
+              115
+            ],
+            "source_rgb": [
+              191,
+              129,
+              125
+            ],
+            "stitch_count": 40,
+            "hex": "CF7373"
+          },
+          {
+            "code": "3852",
+            "name": "Straw Very Dark",
+            "rgb": [
+              205,
+              157,
+              55
+            ],
+            "source_rgb": [
+              224,
+              156,
+              31
+            ],
+            "stitch_count": 50,
+            "hex": "CD9D37"
+          },
+          {
+            "code": "783",
+            "name": "Medium Topaz",
+            "rgb": [
+              208,
+              136,
+              60
+            ],
+            "source_rgb": [
+              215,
+              138,
+              63
+            ],
+            "stitch_count": 26,
+            "hex": "D0883C"
+          },
+          {
+            "code": "163",
+            "name": "Celadon Green Md",
+            "rgb": [
+              77,
+              131,
+              97
+            ],
+            "source_rgb": [
+              78,
+              131,
+              104
+            ],
+            "stitch_count": 25,
+            "hex": "4D8361"
+          }
+        ],
+        "limitations": [
+          "Backstitch cells are flagged but no reviewed line plan was supplied.",
+          "DMC RGB references are approximate and require physical color-card review.",
+          "White-on-white stitches require human review."
+        ],
+        "recommended_balanced_grid": {
+          "width": 61,
+          "height": 92,
+          "relative_candidate_score": 0.9123,
+          "stitches": 1803
+        },
+        "oxs_validation": {
+          "valid": true,
+          "errors": [],
+          "palette_count": 30,
+          "stitch_count": 7265,
+          "backstitch_count": 0,
+          "black_palette_indices": []
+        },
+        "pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 10,
+          "file_size_bytes": 250509,
+          "codes_verified_in_grid": true
+        },
+        "symbol_pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 10,
+          "file_size_bytes": 167697,
+          "codes_verified_in_grid": false
+        },
+        "materials_validation": {
+          "valid": true,
+          "errors": [],
+          "row_count": 30
+        }
+      }
+    },
+    {
+      "id": "folk-owl",
+      "legacy_suite": "cross-stitch-folk-owl-fidelity-v1",
+      "files_sha256": {
+        "source.png": "c671819b042c98bdfcc8e07341eee633d9814656f2dbfdcea71e7e1f7f0569ab",
+        "legacy-effect.png": "a5b70a21f77efcdcd45f5e71c50efb90d9a2f81fa3c41cb4a0e389bc4faa25fd",
+        "legacy-pattern.png": "350d943c0f772eff6ac52c0bee9708f5e8eb4e49b2b776bddacf10526b195a90",
+        "legacy-report.json": "6acc939b20bd0853c3c04177fcf5852f6b7956f4fe9f31efaa34db79958230dc"
+      },
+      "legacy_report": {
+        "source": "/private/var/folders/jq/q6dqh9452811qbhd87pd31w40000gn/T/codex-clipboard-4a9134a9-49be-4be9-a5c6-ee00ec074598.png",
+        "title": "民俗花园猫头鹰·忠实还原版",
+        "grid": {
+          "width": 140,
+          "height": 210
+        },
+        "detected_native_grid": {
+          "width": 91,
+          "height": 136
+        },
+        "region_consistency": "strong",
+        "color_profile": "faithful",
+        "color_fidelity": {
+          "valid": true,
+          "errors": [],
+          "mean_delta_e": 8.804,
+          "median_delta_e": 7.255,
+          "p90_delta_e": 15.924,
+          "tone_correlation": 0.9093,
+          "reviewed_stitches": 10537
+        },
+        "color_fragments": {
+          "single_cell_color_islands": 1625,
+          "one_to_three_cell_color_islands": 2106
+        },
+        "full_stitches": 10537,
+        "palette_count": 23,
+        "cloth_rgb": [
+          242,
+          241,
+          240
+        ],
+        "design_bbox": [
+          7,
+          36,
+          131,
+          180
+        ],
+        "backstitch_candidate_cells": 0,
+        "backstitch_segments": 0,
+        "fabric": {
+          "count": 14,
+          "strands": 2
+        },
+        "finished_size_cm": {
+          "width": 25.4,
+          "height": 38.1
+        },
+        "black_guard": {
+          "approved": false,
+          "dmc_310_count": 0,
+          "hex_000000_count": 0
+        },
+        "target_relative_candidate_score": 0.9,
+        "budget": [
+          {
+            "width": 59,
+            "height": 88,
+            "raw_score": 0.566137133192183,
+            "relative_score": 0.7804495704621315,
+            "stitches": 1771,
+            "colors": 23
+          },
+          {
+            "width": 73,
+            "height": 110,
+            "raw_score": 0.5981709813366832,
+            "relative_score": 0.8246099011644413,
+            "stitches": 2612,
+            "colors": 24
+          },
+          {
+            "width": 82,
+            "height": 123,
+            "raw_score": 0.6208597403609375,
+            "relative_score": 0.8558875390310022,
+            "stitches": 3227,
+            "colors": 23
+          },
+          {
+            "width": 91,
+            "height": 136,
+            "raw_score": 0.6390494554234835,
+            "relative_score": 0.8809630101052047,
+            "stitches": 3953,
+            "colors": 23
+          },
+          {
+            "width": 140,
+            "height": 210,
+            "raw_score": 0.7253987376236921,
+            "relative_score": 1.0,
+            "stitches": 10537,
+            "colors": 23
+          }
+        ],
+        "top_grid_candidates": [
+          {
+            "width": 91,
+            "height": 136,
+            "texture_clarity": 24.4138445244933
+          },
+          {
+            "width": 45,
+            "height": 68,
+            "texture_clarity": 19.56015312657268
+          },
+          {
+            "width": 90,
+            "height": 135,
+            "texture_clarity": 13.49441343535787
+          },
+          {
+            "width": 89,
+            "height": 134,
+            "texture_clarity": 5.632160306790557
+          },
+          {
+            "width": 92,
+            "height": 138,
+            "texture_clarity": 5.55572059847551
+          },
+          {
+            "width": 46,
+            "height": 69,
+            "texture_clarity": 5.0056934899378644
+          },
+          {
+            "width": 60,
+            "height": 90,
+            "texture_clarity": 3.3852317435331005
+          },
+          {
+            "width": 64,
+            "height": 96,
+            "texture_clarity": 2.5116532743446767
+          },
+          {
+            "width": 93,
+            "height": 140,
+            "texture_clarity": 2.4806153674556777
+          },
+          {
+            "width": 61,
+            "height": 92,
+            "texture_clarity": 2.403240832176615
+          }
+        ],
+        "palette": [
+          {
+            "code": "3024",
+            "name": "Brown Gray Vy Lt",
+            "rgb": [
+              235,
+              234,
+              231
+            ],
+            "source_rgb": [
+              222,
+              220,
+              216
+            ],
+            "stitch_count": 1238,
+            "hex": "EBEAE7"
+          },
+          {
+            "code": "311",
+            "name": "Medium Navy Blue",
+            "rgb": [
+              0,
+              42,
+              100
+            ],
+            "source_rgb": [
+              20,
+              55,
+              84
+            ],
+            "stitch_count": 1352,
+            "hex": "002A64"
+          },
+          {
+            "code": "3363",
+            "name": "Pine Green Md",
+            "rgb": [
+              114,
+              130,
+              86
+            ],
+            "source_rgb": [
+              123,
+              129,
+              99
+            ],
+            "stitch_count": 921,
+            "hex": "728256"
+          },
+          {
+            "code": "803",
+            "name": "Baby Blue Ult Vy Dk",
+            "rgb": [
+              44,
+              89,
+              124
+            ],
+            "source_rgb": [
+              38,
+              85,
+              119
+            ],
+            "stitch_count": 760,
+            "hex": "2C597C"
+          },
+          {
+            "code": "522",
+            "name": "Fern Green",
+            "rgb": [
+              150,
+              158,
+              126
+            ],
+            "source_rgb": [
+              157,
+              160,
+              141
+            ],
+            "stitch_count": 656,
+            "hex": "969E7E"
+          },
+          {
+            "code": "3033",
+            "name": "Very Light Mocha Brown",
+            "rgb": [
+              219,
+              199,
+              173
+            ],
+            "source_rgb": [
+              220,
+              203,
+              177
+            ],
+            "stitch_count": 587,
+            "hex": "DBC7AD"
+          },
+          {
+            "code": "928",
+            "name": "Very Light Gray Green",
+            "rgb": [
+              192,
+              198,
+              191
+            ],
+            "source_rgb": [
+              196,
+              195,
+              185
+            ],
+            "stitch_count": 489,
+            "hex": "C0C6BF"
+          },
+          {
+            "code": "3768",
+            "name": "Gray Green Dark",
+            "rgb": [
+              101,
+              127,
+              127
+            ],
+            "source_rgb": [
+              92,
+              133,
+              131
+            ],
+            "stitch_count": 553,
+            "hex": "657F7F"
+          },
+          {
+            "code": "3046",
+            "name": "Yellow Beige Md",
+            "rgb": [
+              216,
+              188,
+              154
+            ],
+            "source_rgb": [
+              203,
+              177,
+              139
+            ],
+            "stitch_count": 508,
+            "hex": "D8BC9A"
+          },
+          {
+            "code": "920",
+            "name": "Medium Copper",
+            "rgb": [
+              171,
+              72,
+              54
+            ],
+            "source_rgb": [
+              179,
+              77,
+              56
+            ],
+            "stitch_count": 468,
+            "hex": "AB4836"
+          },
+          {
+            "code": "931",
+            "name": "Medium Antique Blue",
+            "rgb": [
+              102,
+              119,
+              132
+            ],
+            "source_rgb": [
+              91,
+              121,
+              143
+            ],
+            "stitch_count": 371,
+            "hex": "667784"
+          },
+          {
+            "code": "930",
+            "name": "Dark Antique Blue",
+            "rgb": [
+              73,
+              92,
+              108
+            ],
+            "source_rgb": [
+              55,
+              87,
+              99
+            ],
+            "stitch_count": 290,
+            "hex": "495C6C"
+          },
+          {
+            "code": "932",
+            "name": "Light Antique Blue",
+            "rgb": [
+              146,
+              160,
+              175
+            ],
+            "source_rgb": [
+              156,
+              172,
+              182
+            ],
+            "stitch_count": 329,
+            "hex": "92A0AF"
+          },
+          {
+            "code": "3826",
+            "name": "Golden Brown",
+            "rgb": [
+              173,
+              114,
+              57
+            ],
+            "source_rgb": [
+              178,
+              121,
+              39
+            ],
+            "stitch_count": 272,
+            "hex": "AD7239"
+          },
+          {
+            "code": "355",
+            "name": "Dark Terra Cotta",
+            "rgb": [
+              151,
+              56,
+              42
+            ],
+            "source_rgb": [
+              152,
+              61,
+              41
+            ],
+            "stitch_count": 311,
+            "hex": "97382A"
+          },
+          {
+            "code": "801",
+            "name": "Dark Coffee Brown",
+            "rgb": [
+              97,
+              57,
+              29
+            ],
+            "source_rgb": [
+              96,
+              63,
+              38
+            ],
+            "stitch_count": 266,
+            "hex": "61391D"
+          },
+          {
+            "code": "3859",
+            "name": "Rosewood Light",
+            "rgb": [
+              186,
+              139,
+              124
+            ],
+            "source_rgb": [
+              199,
+              158,
+              142
+            ],
+            "stitch_count": 190,
+            "hex": "BA8B7C"
+          },
+          {
+            "code": "3773",
+            "name": "Desert Sand Dark",
+            "rgb": [
+              182,
+              117,
+              82
+            ],
+            "source_rgb": [
+              187,
+              117,
+              95
+            ],
+            "stitch_count": 165,
+            "hex": "B67552"
+          },
+          {
+            "code": "422",
+            "name": "Light Hazelnut Brown",
+            "rgb": [
+              201,
+              154,
+              103
+            ],
+            "source_rgb": [
+              194,
+              150,
+              88
+            ],
+            "stitch_count": 217,
+            "hex": "C99A67"
+          },
+          {
+            "code": "535",
+            "name": "Ash Gray Vy Lt",
+            "rgb": [
+              99,
+              100,
+              88
+            ],
+            "source_rgb": [
+              107,
+              108,
+              96
+            ],
+            "stitch_count": 177,
+            "hex": "636458"
+          },
+          {
+            "code": "780",
+            "name": "Ultra Very Dark Topaz",
+            "rgb": [
+              148,
+              80,
+              38
+            ],
+            "source_rgb": [
+              165,
+              87,
+              36
+            ],
+            "stitch_count": 189,
+            "hex": "945026"
+          },
+          {
+            "code": "869",
+            "name": "Hazelnut Brown V Dk",
+            "rgb": [
+              131,
+              94,
+              57
+            ],
+            "source_rgb": [
+              132,
+              93,
+              54
+            ],
+            "stitch_count": 103,
+            "hex": "835E39"
+          },
+          {
+            "code": "3371",
+            "name": "Black Brown",
+            "rgb": [
+              30,
+              17,
+              8
+            ],
+            "source_rgb": [
+              48,
+              37,
+              31
+            ],
+            "stitch_count": 125,
+            "hex": "1E1108"
+          }
+        ],
+        "limitations": [
+          "Backstitch cells are flagged but no reviewed line plan was supplied.",
+          "DMC RGB references are approximate and require physical color-card review.",
+          "White-on-white stitches require human review."
+        ],
+        "recommended_balanced_grid": {
+          "width": 140,
+          "height": 210,
+          "relative_candidate_score": 1.0,
+          "stitches": 10537
+        },
+        "oxs_validation": {
+          "valid": true,
+          "errors": [],
+          "palette_count": 23,
+          "stitch_count": 10537,
+          "backstitch_count": 0,
+          "black_palette_indices": []
+        },
+        "pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 14,
+          "file_size_bytes": 361793,
+          "codes_verified_in_grid": true
+        },
+        "symbol_pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 14,
+          "file_size_bytes": 241835,
+          "codes_verified_in_grid": false
+        },
+        "materials_validation": {
+          "valid": true,
+          "errors": [],
+          "row_count": 23
+        }
+      }
+    },
+    {
+      "id": "lucky-rabbit",
+      "legacy_suite": "cross-stitch-lucky-rabbit-fidelity-v1",
+      "files_sha256": {
+        "source.png": "c06e17dd32da3a6c95f91b71f9e1b5c7df679169e2a9ac33c8159ee85760bf49",
+        "legacy-effect.png": "8cf3893ceb708bc8386a1967c3ee2e033cf713a754222006c02a7f200b942af9",
+        "legacy-pattern.png": "2f9c1072c699c789f34357e09d94fbdef63d76c2fb314640a05063b361476eea",
+        "legacy-report.json": "040fe66e5e5fbff96a7ff77ab677fa866a98197b71a79ed1651dc5ac293b4189"
+      },
+      "legacy_report": {
+        "source": "/private/var/folders/jq/q6dqh9452811qbhd87pd31w40000gn/T/codex-clipboard-95e0b35d-d594-428d-ab44-274d43bcaaf8.png",
+        "title": "幸运小兔与四叶草·实操版",
+        "grid": {
+          "width": 120,
+          "height": 180
+        },
+        "detected_native_grid": {
+          "width": 77,
+          "height": 116
+        },
+        "region_consistency": "strong",
+        "color_profile": "faithful",
+        "color_fidelity": {
+          "valid": true,
+          "errors": [],
+          "mean_delta_e": 4.726,
+          "median_delta_e": 3.714,
+          "p90_delta_e": 8.939,
+          "tone_correlation": 0.9425,
+          "reviewed_stitches": 7559
+        },
+        "color_fragments": {
+          "single_cell_color_islands": 258,
+          "one_to_three_cell_color_islands": 380
+        },
+        "full_stitches": 7559,
+        "palette_count": 23,
+        "cloth_rgb": [
+          236,
+          234,
+          232
+        ],
+        "design_bbox": [
+          13,
+          23,
+          114,
+          153
+        ],
+        "backstitch_candidate_cells": 0,
+        "backstitch_segments": 0,
+        "fabric": {
+          "count": 14,
+          "strands": 2
+        },
+        "finished_size_cm": {
+          "width": 21.77,
+          "height": 32.66
+        },
+        "black_guard": {
+          "approved": false,
+          "dmc_310_count": 0,
+          "hex_000000_count": 0
+        },
+        "target_relative_candidate_score": 0.9,
+        "budget": [
+          {
+            "width": 50,
+            "height": 75,
+            "raw_score": 0.6425005317869374,
+            "relative_score": 0.9072569803011388,
+            "stitches": 1471,
+            "colors": 22
+          },
+          {
+            "width": 62,
+            "height": 93,
+            "raw_score": 0.6607120969204409,
+            "relative_score": 0.9329730206344079,
+            "stitches": 2338,
+            "colors": 24
+          },
+          {
+            "width": 69,
+            "height": 104,
+            "raw_score": 0.6699243550313863,
+            "relative_score": 0.9459813919306088,
+            "stitches": 2664,
+            "colors": 22
+          },
+          {
+            "width": 77,
+            "height": 116,
+            "raw_score": 0.6766820147587339,
+            "relative_score": 0.9555236936950674,
+            "stitches": 3411,
+            "colors": 23
+          },
+          {
+            "width": 120,
+            "height": 180,
+            "raw_score": 0.7081792102317882,
+            "relative_score": 1.0,
+            "stitches": 7559,
+            "colors": 23
+          }
+        ],
+        "top_grid_candidates": [
+          {
+            "width": 77,
+            "height": 116,
+            "texture_clarity": 6.3566328414194
+          },
+          {
+            "width": 82,
+            "height": 123,
+            "texture_clarity": 4.745388452668305
+          },
+          {
+            "width": 41,
+            "height": 62,
+            "texture_clarity": 4.6972892612592805
+          },
+          {
+            "width": 76,
+            "height": 114,
+            "texture_clarity": 1.9905296665305507
+          },
+          {
+            "width": 81,
+            "height": 122,
+            "texture_clarity": 1.2600489939126016
+          },
+          {
+            "width": 128,
+            "height": 192,
+            "texture_clarity": 1.1206887584036027
+          },
+          {
+            "width": 55,
+            "height": 82,
+            "texture_clarity": 1.0948497249060636
+          },
+          {
+            "width": 57,
+            "height": 86,
+            "texture_clarity": 1.0851463741923686
+          },
+          {
+            "width": 60,
+            "height": 90,
+            "texture_clarity": 1.0303297772890407
+          },
+          {
+            "width": 56,
+            "height": 84,
+            "texture_clarity": 1.0266014273968664
+          }
+        ],
+        "palette": [
+          {
+            "code": "543",
+            "name": "Beige Brown Ult Vy Lt",
+            "rgb": [
+              242,
+              227,
+              206
+            ],
+            "source_rgb": [
+              237,
+              223,
+              203
+            ],
+            "stitch_count": 2448,
+            "hex": "F2E3CE"
+          },
+          {
+            "code": "3033",
+            "name": "Very Light Mocha Brown",
+            "rgb": [
+              219,
+              199,
+              173
+            ],
+            "source_rgb": [
+              223,
+              202,
+              175
+            ],
+            "stitch_count": 1777,
+            "hex": "DBC7AD"
+          },
+          {
+            "code": "842",
+            "name": "Very Light Beige Brown",
+            "rgb": [
+              204,
+              176,
+              148
+            ],
+            "source_rgb": [
+              205,
+              178,
+              145
+            ],
+            "stitch_count": 666,
+            "hex": "CCB094"
+          },
+          {
+            "code": "3024",
+            "name": "Brown Gray Vy Lt",
+            "rgb": [
+              235,
+              234,
+              231
+            ],
+            "source_rgb": [
+              227,
+              221,
+              214
+            ],
+            "stitch_count": 452,
+            "hex": "EBEAE7"
+          },
+          {
+            "code": "722",
+            "name": "Orange Spice Light",
+            "rgb": [
+              247,
+              151,
+              111
+            ],
+            "source_rgb": [
+              232,
+              145,
+              113
+            ],
+            "stitch_count": 386,
+            "hex": "F7976F"
+          },
+          {
+            "code": "950",
+            "name": "Light Desert Sand",
+            "rgb": [
+              229,
+              172,
+              141
+            ],
+            "source_rgb": [
+              234,
+              174,
+              144
+            ],
+            "stitch_count": 278,
+            "hex": "E5AC8D"
+          },
+          {
+            "code": "922",
+            "name": "Light Copper",
+            "rgb": [
+              221,
+              110,
+              76
+            ],
+            "source_rgb": [
+              226,
+              109,
+              77
+            ],
+            "stitch_count": 270,
+            "hex": "DD6E4C"
+          },
+          {
+            "code": "905",
+            "name": "Dark Parrot Green",
+            "rgb": [
+              70,
+              121,
+              36
+            ],
+            "source_rgb": [
+              92,
+              128,
+              46
+            ],
+            "stitch_count": 197,
+            "hex": "467924"
+          },
+          {
+            "code": "742",
+            "name": "Light Tangerine",
+            "rgb": [
+              253,
+              174,
+              60
+            ],
+            "source_rgb": [
+              235,
+              170,
+              66
+            ],
+            "stitch_count": 247,
+            "hex": "FDAE3C"
+          },
+          {
+            "code": "904",
+            "name": "Very Dark Parrot Green",
+            "rgb": [
+              56,
+              99,
+              37
+            ],
+            "source_rgb": [
+              64,
+              105,
+              37
+            ],
+            "stitch_count": 153,
+            "hex": "386325"
+          },
+          {
+            "code": "3347",
+            "name": "Medium Yellow Green",
+            "rgb": [
+              109,
+              150,
+              70
+            ],
+            "source_rgb": [
+              124,
+              149,
+              58
+            ],
+            "stitch_count": 95,
+            "hex": "6D9646"
+          },
+          {
+            "code": "3364",
+            "name": "Pine Green",
+            "rgb": [
+              131,
+              151,
+              95
+            ],
+            "source_rgb": [
+              129,
+              144,
+              80
+            ],
+            "stitch_count": 93,
+            "hex": "83975F"
+          },
+          {
+            "code": "803",
+            "name": "Baby Blue Ult Vy Dk",
+            "rgb": [
+              44,
+              89,
+              124
+            ],
+            "source_rgb": [
+              34,
+              86,
+              132
+            ],
+            "stitch_count": 99,
+            "hex": "2C597C"
+          },
+          {
+            "code": "3053",
+            "name": "Green Gray",
+            "rgb": [
+              156,
+              164,
+              130
+            ],
+            "source_rgb": [
+              166,
+              169,
+              130
+            ],
+            "stitch_count": 67,
+            "hex": "9CA482"
+          },
+          {
+            "code": "312",
+            "name": "Baby Blue Very Dark",
+            "rgb": [
+              53,
+              102,
+              139
+            ],
+            "source_rgb": [
+              60,
+              112,
+              156
+            ],
+            "stitch_count": 49,
+            "hex": "35668B"
+          },
+          {
+            "code": "334",
+            "name": "Medium Baby Blue",
+            "rgb": [
+              96,
+              133,
+              184
+            ],
+            "source_rgb": [
+              93,
+              143,
+              182
+            ],
+            "stitch_count": 54,
+            "hex": "6085B8"
+          },
+          {
+            "code": "3862",
+            "name": "Mocha Beige Dark",
+            "rgb": [
+              138,
+              110,
+              78
+            ],
+            "source_rgb": [
+              143,
+              112,
+              83
+            ],
+            "stitch_count": 37,
+            "hex": "8A6E4E"
+          },
+          {
+            "code": "3777",
+            "name": "Terra Cotta Vy Dk",
+            "rgb": [
+              134,
+              48,
+              34
+            ],
+            "source_rgb": [
+              139,
+              48,
+              25
+            ],
+            "stitch_count": 39,
+            "hex": "863022"
+          },
+          {
+            "code": "932",
+            "name": "Light Antique Blue",
+            "rgb": [
+              146,
+              160,
+              175
+            ],
+            "source_rgb": [
+              146,
+              165,
+              183
+            ],
+            "stitch_count": 50,
+            "hex": "92A0AF"
+          },
+          {
+            "code": "3031",
+            "name": "Mocha Brown Vy Dk",
+            "rgb": [
+              75,
+              60,
+              42
+            ],
+            "source_rgb": [
+              77,
+              54,
+              30
+            ],
+            "stitch_count": 39,
+            "hex": "4B3C2A"
+          },
+          {
+            "code": "676",
+            "name": "Light Old Gold",
+            "rgb": [
+              236,
+              191,
+              125
+            ],
+            "source_rgb": [
+              231,
+              186,
+              117
+            ],
+            "stitch_count": 23,
+            "hex": "ECBF7D"
+          },
+          {
+            "code": "3371",
+            "name": "Black Brown",
+            "rgb": [
+              30,
+              17,
+              8
+            ],
+            "source_rgb": [
+              31,
+              26,
+              17
+            ],
+            "stitch_count": 22,
+            "hex": "1E1108"
+          },
+          {
+            "code": "433",
+            "name": "Medium Brown",
+            "rgb": [
+              115,
+              66,
+              30
+            ],
+            "source_rgb": [
+              127,
+              74,
+              34
+            ],
+            "stitch_count": 18,
+            "hex": "73421E"
+          }
+        ],
+        "limitations": [
+          "Backstitch cells are flagged but no reviewed line plan was supplied.",
+          "DMC RGB references are approximate and require physical color-card review.",
+          "White-on-white stitches require human review."
+        ],
+        "recommended_balanced_grid": {
+          "width": 50,
+          "height": 75,
+          "relative_candidate_score": 0.9073,
+          "stitches": 1471
+        },
+        "oxs_validation": {
+          "valid": true,
+          "errors": [],
+          "palette_count": 23,
+          "stitch_count": 7559,
+          "backstitch_count": 0,
+          "black_palette_indices": []
+        },
+        "pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 10,
+          "file_size_bytes": 242251,
+          "codes_verified_in_grid": true
+        },
+        "symbol_pdf_validation": {
+          "valid": true,
+          "errors": [],
+          "page_count": 10,
+          "file_size_bytes": 161262,
+          "codes_verified_in_grid": false
+        },
+        "materials_validation": {
+          "valid": true,
+          "errors": [],
+          "row_count": 23
+        }
+      }
+    }
+  ]
+}

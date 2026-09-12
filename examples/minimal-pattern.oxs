@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chart>
+  <properties oxsversion="1.0" software="StitchForge" software_version="0.1.0" chartheight="3" chartwidth="4" charttitle="4×3 非对称 OXS 测试样例" author="StitchForge" copyright="" instructions="" stitchesperinch="14" stitchesperinch_y="14" palettecount="2" />
+  <palette>
+    <palette_item index="0" number="cloth" name="cloth" color="DDD5C5" printcolor="DDD5C5" blendcolor="nil" strands="2" symbol="100" />
+    <palette_item index="1" number="TEST BLACK" name="测试黑色" color="000000" printcolor="000000" blendcolor="nil" strands="2" symbol="1" />
+    <palette_item index="2" number="TEST WHITE" name="测试白色" color="FFFFFF" printcolor="FFFFFF" blendcolor="nil" strands="2" symbol="2" />
+  </palette>
+  <fullstitches>
+    <stitch x="0" y="0" palindex="1" />
+    <stitch x="2" y="0" palindex="2" />
+    <stitch x="1" y="1" palindex="1" />
+    <stitch x="2" y="1" palindex="2" />
+    <stitch x="0" y="2" palindex="2" />
+    <stitch x="3" y="2" palindex="1" />
+  </fullstitches>
+  <backstitches />
+</chart>
