@@ -111,3 +111,12 @@ describe('lineCellIndices', () => {
     expect(lineCellIndices(cell(3, 3), cell(3, 0), 10)).toEqual([33, 23, 13, 3])
   })
 })
+
+it('keeps the pattern point under the moving pinch midpoint', async () => {
+  const { pinchViewport } = await import('./viewport')
+  const viewport = { zoom: 1, offsetX: 10, offsetY: 20 }
+  const result = pinchViewport(viewport, [{ x: 100, y: 100 }, { x: 200, y: 100 }], [{ x: 80, y: 130 }, { x: 280, y: 130 }])
+  expect(result.zoom).toBe(2)
+  expect((150 - viewport.offsetX) * 2 + result.offsetX).toBe(180)
+  expect((100 - viewport.offsetY) * 2 + result.offsetY).toBe(130)
+})

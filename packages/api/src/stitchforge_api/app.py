@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import io
-import json
+import os
 import re
 import tempfile
 import time
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import BoundedSemaphore
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Query, Request, Response, status
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageColor
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from stitchforge.catalog import load_catalog
+from stitchforge.chart_image import render_download_chart
 from stitchforge.commands import (
     CellPatch,
     CommandValidationError,
@@ -27,36 +28,29 @@ from stitchforge.commands import (
     replay_patch,
 )
 from stitchforge.errors import DocumentValidationError
-from stitchforge.fabric import MAX_GRID_CELLS, MAX_GRID_SIDE
-from stitchforge.fidelity import measure_motif_resolution
-from stitchforge.imaging import (
-    MAX_IMAGE_FILE_BYTES,
-    ImageInputError,
-    normalize_image,
-    sample_normalized_image,
-)
-from stitchforge.optimize import optimize_small_components
-from stitchforge.oxs import MAX_OXS_BYTES, SUPPORTED_COORDINATE_PROFILE, import_oxs
-from stitchforge.palette import (
-    PaletteConstraintError,
-    build_pattern_document,
-    select_clustered_palette,
-    select_palette,
-)
-from stitchforge.recovery import recover_rendered_stitch_colors
-from stitchforge.segmentation import remove_connected_border_background
-from stitchforge.stats import calculate_statistics
+from stitchforge.fabric import MAX_GRID_SIDE
+from stitchforge.oxs import MAX_OXS_BYTES, SUPPORTED_COORDINATE_PROFILE, export_oxs, import_oxs
 from stitchforge_storage import (
     ContentAddressedArtifactStore,
     SQLiteStore,
     StorageConflictError,
     StorageNotFoundError,
 )
+from stitchforge_storage.accounts import AccountError, AccountStore
+from stitchforge_storage.payments import PaymentStore
 
-from .planning import plan_import
+from .accounts import account_router, guard_resources, load_packs
+from .conversion import ConversionOptions, ConversionRequestError, build_conversion
+from .generation import generation_router, read_image_upload
+from .payments import load_providers
+from .payments.routes import WEBHOOK_PATHS, payment_router
+from .resources import computation_slot
+from .thumbnails import ThumbnailCache
 
 LOCAL_ORIGIN = re.compile(r"^https?://(?:127\.0\.0\.1|localhost)(?::\d+)?$")
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Bound raster memory per API process; other requests remain available.
+CHART_EXPORT_SLOT = BoundedSemaphore(1)
 
 
 class StrictModel(BaseModel):
@@ -66,7 +60,7 @@ class StrictModel(BaseModel):
 class CreateProjectRequest(StrictModel):
     name: str = Field(min_length=1, max_length=256)
     fabric_count: int = Field(default=14, ge=6, le=40)
-    fabric_color: str = Field(default="#DDD5C5", pattern=r"^#[0-9A-F]{6}$")
+    fabric_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-F]{6}$")
 
 
 class RenameProjectRequest(StrictModel):
@@ -109,10 +103,6 @@ class ApplyCommandRequest(StrictModel):
 class ReplayCommandRequest(StrictModel):
     command_id: str = Field(min_length=1, max_length=128)
     base_revision_id: str = Field(min_length=1, max_length=128)
-
-
-class ConversionRequestError(ValueError):
-    pass
 
 
 def _now_ms() -> int:
@@ -204,11 +194,7 @@ ArtifactStoreDependency = Annotated[ContentAddressedArtifactStore, Depends(_arti
 
 
 def _router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1")
-
-    @router.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    router = APIRouter(prefix="/api/v1", dependencies=[Depends(guard_resources)])
 
     @router.get("/assets/{artifact_hash}")
     def get_asset(
@@ -230,11 +216,13 @@ def _router() -> APIRouter:
         return Response(
             payload,
             media_type=media_type,
-            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+            headers={"Cache-Control": "no-store"},
         )
 
     @router.post("/projects", status_code=status.HTTP_201_CREATED)
-    def create_project(body: CreateProjectRequest, store: StoreDependency) -> dict[str, Any]:
+    def create_project(
+        body: CreateProjectRequest, store: StoreDependency, request: Request
+    ) -> dict[str, Any]:
         project_id = _identifier("project")
         revision_id = _identifier("revision")
         document = _empty_document(
@@ -245,7 +233,7 @@ def _router() -> APIRouter:
         )
         project, revision = store.create_project_with_revision(
             project_id,
-            workspace_id="local",
+            workspace_id=request.state.user["user_id"],
             name=body.name,
             revision_id=revision_id,
             document=document,
@@ -284,13 +272,16 @@ def _router() -> APIRouter:
             )
         document = imported.document
         artifact = artifact_store.put_bytes(payload, media_type="application/xml")
+        request.app.state.accounts.grant_assets(
+            request.state.user["user_id"], [artifact.artifact_hash]
+        )
         for source in document["provenance"].get("sources", []):
             source["locator"] = f"/api/v1/assets/{artifact.artifact_hash}"
         project_id = _identifier("project")
         document["metadata"]["pattern_id"] = project_id
         project, revision = store.create_project_with_revision(
             project_id,
-            workspace_id="local",
+            workspace_id=request.state.user["user_id"],
             name=document["metadata"]["title"] or "OXS 图纸",
             revision_id=_identifier("revision"),
             document=document,
@@ -305,6 +296,7 @@ def _router() -> APIRouter:
 
     @router.get("/projects")
     def list_projects(
+        request: Request,
         store: StoreDependency,
         search: Annotated[str, Query(max_length=256)] = "",
         deleted: bool = False,
@@ -313,7 +305,7 @@ def _router() -> APIRouter:
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, Any]:
         return store.list_projects(
-            workspace_id="local",
+            workspace_id=request.state.user["user_id"],
             search=search.strip(),
             deleted=deleted,
             sort=sort,
@@ -349,35 +341,41 @@ def _router() -> APIRouter:
     def project_thumbnail(
         project_id: str,
         revision_id: str,
+        request: Request,
         store: StoreDependency,
     ) -> Response:
-        revision = store.get_revision(revision_id)
-        if revision.project_id != project_id:
-            raise StorageNotFoundError("版本不属于此项目")
-        document = revision.document
-        background = ImageColor.getrgb(document["fabric"]["display_srgb"])
-        materials = {item["id"]: item for item in document["materials"]}
-        colors = {0: background}
-        for recipe in document["recipes"]:
-            material = materials[recipe["components"][0]["material_id"]]
-            colors[recipe["index"]] = ImageColor.getrgb(
-                material["color"]["display_srgb"] or "#888888"
+        # Router ownership dependencies run before every cache lookup or 304 response.
+        def render():
+            revision = store.get_revision(revision_id)
+            if revision.project_id != project_id:
+                raise StorageNotFoundError("版本不属于此项目")
+            document = revision.document
+            background = ImageColor.getrgb(document["fabric"]["display_srgb"])
+            materials = {item["id"]: item for item in document["materials"]}
+            colors = {0: background}
+            for recipe in document["recipes"]:
+                material = materials[recipe["components"][0]["material_id"]]
+                colors[recipe["index"]] = ImageColor.getrgb(
+                    material["color"]["display_srgb"] or "#888888"
+                )
+            size = (document["grid"]["width"], document["grid"]["height"])
+            image = Image.new("RGB", size, background)
+            image.putdata([colors[index] for index in document["full_stitches"]["cells"]])
+            scale = 320 / max(size)
+            image = image.resize(
+                (max(1, round(size[0] * scale)), max(1, round(size[1] * scale))),
+                resample=Image.Resampling.NEAREST,
             )
-        size = (document["grid"]["width"], document["grid"]["height"])
-        image = Image.new("RGB", size, background)
-        image.putdata([colors[index] for index in document["full_stitches"]["cells"]])
-        scale = 320 / max(size)
-        image = image.resize(
-            (max(1, round(size[0] * scale)), max(1, round(size[1] * scale))),
-            resample=Image.Resampling.NEAREST,
-        )
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return Response(
-            buffer.getvalue(),
-            media_type="image/png",
-            headers={"Cache-Control": "private, max-age=31536000, immutable"},
-        )
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue(), f'"{revision.document_hash}"'
+
+        payload, etag = request.app.state.thumbnails.get((project_id, revision_id), render)
+        headers = {"Cache-Control": "private, no-cache", "ETag": etag, "Vary": "Cookie"}
+        candidates = request.headers.get("if-none-match", "").split(",")
+        if any(candidate.strip().removeprefix("W/") in {etag, "*"} for candidate in candidates):
+            return Response(status_code=304, headers=headers)
+        return Response(payload, media_type="image/png", headers=headers)
 
     @router.get("/projects/{project_id}")
     def get_project(project_id: str, store: StoreDependency) -> dict[str, Any]:
@@ -393,6 +391,54 @@ def _router() -> APIRouter:
         if revision.project_id != project_id:
             raise StorageNotFoundError(f"版本不属于项目: {revision_id}")
         return asdict(revision)
+
+    @router.get("/projects/{project_id}/revisions/{revision_id}/download/{format}")
+    def download_revision(
+        project_id: str,
+        revision_id: str,
+        format: Literal["oxs", "png"],
+        request: Request,
+        store: StoreDependency,
+    ) -> Response:
+        revision = store.get_revision(revision_id)
+        if revision.project_id != project_id:
+            raise StorageNotFoundError("版本不属于此图纸")
+        if store.get_project(project_id).deleted_at_ms is not None:
+            raise StorageNotFoundError("请先从回收站恢复图纸")
+        request.app.state.accounts.throttle(f"export:{request.state.user['user_id']}", limit=60)
+        if not CHART_EXPORT_SLOT.acquire(blocking=False):
+            raise AccountError("EXPORT_BUSY", "正在处理其他下载，请稍后重试。", 503)
+        try:
+            with tempfile.TemporaryDirectory(prefix="stitchforge-export-") as directory:
+                path = Path(directory) / f"chart.{format}"
+                if format == "oxs":
+                    report = export_oxs(
+                        revision.document,
+                        path,
+                        coordinate_profile=SUPPORTED_COORDINATE_PROFILE,
+                        confirm_loss=True,
+                    )
+                    if report.blocked:
+                        raise AccountError(
+                            "EXPORT_FAILED", "此图纸无法导出 OXS，请检查线色数据。", 422
+                        )
+                else:
+                    render_download_chart(revision.document, path)
+                payload = path.read_bytes()
+        except ValueError as error:
+            raise AccountError("EXPORT_FAILED", str(error), 422) from error
+        finally:
+            CHART_EXPORT_SLOT.release()
+        title = re.sub(r'[\x00-\x1f\x7f/\\:*?"<>|]', "_", revision.document["metadata"]["title"])
+        filename = f"{title[:120].strip() or 'chart'}.{format}"
+        return Response(
+            payload,
+            media_type="image/png" if format == "png" else "application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename=chart.{format}; "
+                f"filename*=UTF-8''{quote(filename, safe='')}"
+            },
+        )
 
     @router.post("/projects/{project_id}/revisions", status_code=status.HTTP_201_CREATED)
     def create_revision(
@@ -411,12 +457,11 @@ def _router() -> APIRouter:
         "/projects/{project_id}/convert-image",
         status_code=status.HTTP_201_CREATED,
     )
-    def convert_image(
+    async def convert_image(
         project_id: str,
         request: Request,
         store: StoreDependency,
         artifact_store: ArtifactStoreDependency,
-        payload: Annotated[bytes, Body(media_type="application/octet-stream")],
         expected_head_revision_id: Annotated[str, Query(min_length=1, max_length=128)],
         grid_width: Annotated[int | None, Query(ge=1, le=MAX_GRID_SIDE)] = None,
         grid_height: Annotated[int | None, Query(ge=1, le=MAX_GRID_SIDE)] = None,
@@ -428,145 +473,61 @@ def _router() -> APIRouter:
         source_profile: Literal["artwork", "rendered_stitch"] = "artwork",
         palette_strategy: Literal["greedy", "clustered"] = "clustered",
     ) -> dict[str, Any]:
-        if (grid_width is None) != (grid_height is None):
-            raise ConversionRequestError("手动网格宽高需要同时提供")
-        automatic = grid_width is None
-        planning_report = None
-        if (
-            grid_width is not None
-            and grid_height is not None
-            and grid_width * grid_height > MAX_GRID_CELLS
-        ):
-            raise ConversionRequestError(f"网格总数不能超过 {MAX_GRID_CELLS:,}")
-        if not payload:
-            raise ConversionRequestError("图片内容不能为空")
-        if len(payload) > MAX_IMAGE_FILE_BYTES:
-            raise ConversionRequestError("图片文件超过 20 MiB 限制")
+        from starlette.concurrency import run_in_threadpool
 
-        project = store.get_project(project_id)
-        if project.head_revision_id != expected_head_revision_id:
-            raise StorageConflictError(f"REVISION_CONFLICT: current={project.head_revision_id!r}")
-        base = store.get_revision(expected_head_revision_id)
-        if base.project_id != project_id:
-            raise StorageNotFoundError(f"版本不属于项目: {expected_head_revision_id}")
+        values = locals()
+        payload = await read_image_upload(request)
 
-        work_root = request.app.state.work_dir
-        try:
-            with tempfile.TemporaryDirectory(prefix="conversion-", dir=work_root) as work_name:
-                work = Path(work_name)
-                source_path = work / "source-image"
-                normalized_path = work / "normalized.png"
-                source_path.write_bytes(payload)
-                normalization = normalize_image(source_path, normalized_path)
-                if automatic:
-                    planning_report = plan_import(normalized_path, work)
-                    plan = planning_report["plan"]
-                    grid_width, grid_height = plan["grid_width"], plan["grid_height"]
-                    color_budget, fabric_count = plan["color_budget"], plan["fabric_count"]
-                    strands = plan["strands"]
-                    source_profile = plan["source_profile"]
-                    remove_border_background = plan["remove_border_background"]
-                media_type = "image/jpeg" if normalization.source_format == "JPEG" else "image/png"
-                source_artifact = artifact_store.put_bytes(payload, media_type=media_type)
-                normalized_artifact = artifact_store.put_bytes(
-                    normalized_path.read_bytes(), media_type="image/png"
+        def execute():
+            project = store.get_project(project_id)
+            if project.head_revision_id != expected_head_revision_id:
+                raise StorageConflictError(
+                    f"REVISION_CONFLICT: current={project.head_revision_id!r}"
                 )
-                sampled = sample_normalized_image(
-                    normalized_path,
-                    width=grid_width,
-                    height=grid_height,
+            user_id = request.state.user["user_id"]
+            if request.app.state.accounts.user(user_id)["credits"] < 1:
+                raise AccountError(
+                    "INSUFFICIENT_CREDITS", "生成次数不足，请先充值；OXS 导入免费。", 402
                 )
-                sampled = replace(
-                    sampled,
-                    source_sha256=normalized_artifact.artifact_hash,
-                    source_locator=f"/api/v1/assets/{normalized_artifact.artifact_hash}",
+            try:
+                options = ConversionOptions(
+                    **{key: values[key] for key in ConversionOptions.model_fields}
                 )
-                background_report = None
-                if remove_border_background:
-                    sampled, background_report = remove_connected_border_background(sampled)
-                recovery_report = None
-                if source_profile == "rendered_stitch":
-                    sampled, recovery_report = recover_rendered_stitch_colors(sampled)
-
-                catalog = load_catalog(request.app.state.catalog_path)
-                palette_selector = (
-                    select_clustered_palette if palette_strategy == "clustered" else select_palette
-                )
-                palette_options: dict[str, Any] = {"color_budget": color_budget}
-                if palette_strategy == "greedy":
-                    palette_options["minimum_gain"] = 0.0
-                palette = palette_selector(
-                    sampled,
-                    catalog,
-                    **palette_options,
-                )
-                document = build_pattern_document(
-                    sampled,
-                    catalog,
-                    palette,
-                    pattern_id=project_id,
+            except ValueError as error:
+                raise ConversionRequestError(str(error)) from error
+            with computation_slot(request.app.state.work_dir) as acquired:
+                if not acquired:
+                    raise AccountError("GENERATION_BUSY", "正在处理其他生成任务，请稍后重试。", 429)
+                base = store.get_revision(expected_head_revision_id)
+                built = build_conversion(
+                    project_id=project_id,
                     title=project.name,
-                    author="",
-                    fabric_count=fabric_count,
                     fabric_color=base.document["fabric"]["display_srgb"],
-                    strands=strands,
-                    color_budget=color_budget,
-                    purpose="user_design",
+                    payload=payload,
+                    artifact_store=artifact_store,
+                    work_root=request.app.state.work_dir,
+                    catalog_path=request.app.state.catalog_path,
+                    options=options,
                 )
-                if planning_report is not None:
-                    plan_artifact = artifact_store.put_bytes(
-                        json.dumps(planning_report, ensure_ascii=False, sort_keys=True).encode(),
-                        media_type="application/json",
-                    )
-                    planning_report["artifact_sha256"] = plan_artifact.artifact_hash
-                    document.setdefault("extensions", {})["stitchforge.import_plan"] = (
-                        planning_report
-                    )
-                    if planning_report["provider"] == "codex":
-                        document["provenance"]["ai_proposal_hash"] = plan_artifact.artifact_hash
-                optimization_report = None
-                if optimize:
-                    optimization = optimize_small_components(document, sampled)
-                    document = optimization.document
-                    optimization_report = optimization.report.as_dict()
-        except (ImageInputError, PaletteConstraintError, ValueError, OSError) as error:
-            raise ConversionRequestError(str(error)) from error
+                revision = store.add_revision(
+                    _identifier("revision"),
+                    project_id=project_id,
+                    expected_head_revision_id=expected_head_revision_id,
+                    document=built["document"],
+                    now_ms=_now_ms(),
+                    charge_user_id=user_id,
+                    owned_asset_hashes=built["owned_asset_hashes"],
+                )
+                return {"revision": asdict(revision), **built["response"]}
 
-        revision = store.add_revision(
-            _identifier("revision"),
-            project_id=project_id,
-            expected_head_revision_id=expected_head_revision_id,
-            document=document,
-            now_ms=_now_ms(),
-        )
-        return {
-            "revision": asdict(revision),
-            "source_asset": {
-                "sha256": source_artifact.artifact_hash,
-                "url": f"/api/v1/assets/{source_artifact.artifact_hash}",
-                "media_type": source_artifact.media_type,
-            },
-            "normalized_asset": {
-                "sha256": normalized_artifact.artifact_hash,
-                "url": f"/api/v1/assets/{normalized_artifact.artifact_hash}",
-                "media_type": normalized_artifact.media_type,
-            },
-            "planning_report": planning_report,
-            "normalization_report": normalization.as_dict(),
-            "background_report": (
-                background_report.as_dict() if background_report is not None else None
-            ),
-            "recovery_report": (recovery_report.as_dict() if recovery_report is not None else None),
-            "palette_report": palette.as_dict(),
-            "optimization_report": optimization_report,
-            "statistics": calculate_statistics(document).as_dict(),
-            "motif_resolution": measure_motif_resolution(document).as_dict(),
-        }
+        return await run_in_threadpool(execute)
 
     @router.post("/projects/{project_id}/jobs", status_code=status.HTTP_202_ACCEPTED)
     def enqueue_job(
         project_id: str, body: EnqueueJobRequest, store: StoreDependency
     ) -> dict[str, Any]:
+        if body.job_type == "image_conversion":
+            raise ConversionRequestError("图片任务请使用图片上传入口")
         job = store.enqueue_job(
             _identifier("job"),
             project_id=project_id,
@@ -681,7 +642,9 @@ def _router() -> APIRouter:
     return router
 
 
-def create_app(data_dir: str | Path, *, catalog_path: str | Path | None = None) -> FastAPI:
+def create_app(
+    data_dir: str | Path, *, catalog_path: str | Path | None = None, start_worker: bool = False
+) -> FastAPI:
     data_path = Path(data_dir)
     resolved_catalog_path = (
         Path(catalog_path)
@@ -694,33 +657,96 @@ def create_app(data_dir: str | Path, *, catalog_path: str | Path | None = None) 
         store = SQLiteStore(data_path / "metadata.sqlite3")
         store.ensure_workspace("local", now_ms=_now_ms())
         app.state.store = store
+        app.state.accounts = AccountStore(store)
+        app.state.credit_packs = load_packs()
+        app.state.public_origin = os.environ.get("STITCHFORGE_PUBLIC_ORIGIN", "").rstrip("/")
+        app.state.secure_cookies = app.state.public_origin.startswith("https://")
+        if app.state.public_origin and not app.state.secure_cookies:
+            raise ValueError("STITCHFORGE_PUBLIC_ORIGIN 必须使用 HTTPS")
+        app.state.payments = PaymentStore(app.state.accounts)
+        app.state.payment_providers = load_providers(app.state.public_origin)
         app.state.artifact_store = ContentAddressedArtifactStore(data_path / "artifacts")
         app.state.work_dir = data_path / "work"
         app.state.work_dir.mkdir(parents=True, exist_ok=True)
         app.state.catalog_path = resolved_catalog_path
-        yield
+        app.state.thumbnails = ThumbnailCache()
+        process = None
+        if start_worker:
+            import multiprocessing
 
-    app = FastAPI(title="StitchForge Local API", version="0.1.0", lifespan=lifespan)
+            from .worker import run_worker
+
+            context = multiprocessing.get_context("spawn")
+            stop = context.Event()
+            process = context.Process(
+                target=run_worker,
+                args=(str(data_path.resolve()), str(resolved_catalog_path.resolve()), stop),
+            )
+            process.start()
+            app.state.worker_process = process
+        try:
+            yield
+        finally:
+            if process is not None:
+                from starlette.concurrency import run_in_threadpool
+
+                stop.set()
+                await run_in_threadpool(process.join, 5)
+                if process.is_alive():
+                    process.terminate()
+                    await run_in_threadpool(process.join, 3)
+                if process.is_alive():
+                    process.kill()
+                    await run_in_threadpool(process.join)
+
+    app = FastAPI(title="StitchForge API", version="0.1.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def local_origin_and_request_id(request: Request, call_next):
         request.state.request_id = _identifier("req")
         origin = request.headers.get("origin")
+        is_webhook = request.method == "POST" and request.url.path in WEBHOOK_PATHS
         if (
-            request.method in UNSAFE_METHODS
-            and origin is not None
-            and LOCAL_ORIGIN.fullmatch(origin) is None
+            not is_webhook
+            and request.method in UNSAFE_METHODS
+            and (
+                request.headers.get("sec-fetch-site") == "cross-site"
+                or (
+                    origin is not None
+                    and (
+                        origin != request.app.state.public_origin
+                        if request.app.state.public_origin
+                        else LOCAL_ORIGIN.fullmatch(origin) is None
+                    )
+                )
+            )
         ):
             response = _error_response(
                 request,
                 status_code=403,
                 code="ORIGIN_FORBIDDEN",
-                message="本地工作台拒绝跨站写请求",
+                message="拒绝跨站写请求",
+            )
+        elif (
+            not is_webhook
+            and request.method in UNSAFE_METHODS
+            and request.headers.get("x-stitchforge-request") != "1"
+        ):
+            response = _error_response(
+                request, status_code=403, code="CSRF_REQUIRED", message="请求缺少安全校验头"
             )
         else:
             response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Request-ID"] = request.state.request_id
         return response
+
+    @app.exception_handler(AccountError)
+    async def account_error(request: Request, error: AccountError):
+        return _error_response(
+            request, status_code=error.status, code=error.code, message=str(error)
+        )
 
     @app.exception_handler(StorageNotFoundError)
     async def storage_not_found(request: Request, error: StorageNotFoundError):
@@ -779,8 +805,14 @@ def create_app(data_dir: str | Path, *, catalog_path: str | Path | None = None) 
             status_code=422,
             code="INVALID_REQUEST",
             message="请求参数校验失败",
-            details=jsonable_encoder(error.errors()),
+            details=[
+                {"loc": list(item["loc"]), "msg": item["msg"], "type": item["type"]}
+                for item in error.errors()
+            ],
         )
 
+    app.include_router(account_router())
+    app.include_router(generation_router())
+    app.include_router(payment_router())
     app.include_router(_router())
     return app

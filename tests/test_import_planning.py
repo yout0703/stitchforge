@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from contextlib import closing
@@ -7,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import AccountClient
 from PIL import Image
 from stitchforge_api import create_app, planning
 
@@ -27,7 +28,7 @@ def test_local_plan_keeps_aspect_and_limits(tmp_path):
         assert 1 <= plan.grid_height <= min(600, height)
         assert plan.grid_width * plan.grid_height <= 360000
         assert plan.fabric_count == 16 and plan.strands == 2
-        assert not plan.remove_border_background
+        assert plan.remove_border_background
 
 
 def test_codex_output_is_validated_and_command_is_not_shell(tmp_path, monkeypatch):
@@ -82,7 +83,7 @@ def test_codex_failure_falls_back(tmp_path, monkeypatch, failure):
 def test_automatic_conversion_needs_no_user_parameters(tmp_path, monkeypatch):
     monkeypatch.setenv("STITCHFORGE_CODEX_ENABLED", "0")
     payload = image(tmp_path, (20, 30)).read_bytes()
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = client.post("/api/v1/projects", json={"name": "自动导入"}).json()
         project_id = created["project"]["project_id"]
         head = created["initial_revision"]["revision_id"]
@@ -102,9 +103,64 @@ def test_automatic_conversion_needs_no_user_parameters(tmp_path, monkeypatch):
         assert stale.status_code == 409
 
 
+def test_automatic_fabric_conversion_trims_blank_canvas_and_aligns_private_source(
+    tmp_path, monkeypatch
+):
+    from stitchforge_api import conversion as app_module
+
+    source = Image.new("RGB", (200, 300), "#E4E0D6")
+    for y in range(300):
+        for x in range(200):
+            if (x + y) % 4 == 0:
+                source.putpixel((x, y), (239, 237, 232))
+    for y in range(120, 180):
+        for x in range(80, 120):
+            source.putpixel((x, y), (190, 20, 30))
+    path = tmp_path / "source.png"
+    source.save(path)
+    plan = planning.local_plan(path).model_dump()
+    plan.update(grid_width=20, grid_height=30, color_budget=3, source_profile="rendered_stitch")
+    monkeypatch.setattr(
+        app_module,
+        "plan_import",
+        lambda *_: {
+            "provider": "deepseek",
+            "plan": plan,
+            "fallback_reason": None,
+        },
+    )
+    with AccountClient(create_app(tmp_path / "data")) as client:
+        created = client.post("/api/v1/projects", json={"name": "小图"}).json()
+        project_id = created["project"]["project_id"]
+        response = client.post(
+            f"/api/v1/projects/{project_id}/convert-image",
+            params={"expected_head_revision_id": created["initial_revision"]["revision_id"]},
+            content=path.read_bytes(),
+        )
+        assert response.status_code == 201, response.text
+        result = response.json()
+        document = result["revision"]["document"]
+        assert (document["grid"]["width"], document["grid"]["height"]) == (8, 10)
+        assert document["fabric"]["display_srgb"] == "#FFFFFF"
+        assert result["statistics"]["full_stitch_count"] == 24
+        assert document["provenance"]["ai_proposal_hash"]
+        assert result["crop_report"]["grid_box"] == [6, 10, 14, 20]
+        locator = next(
+            item["locator"]
+            for item in document["provenance"]["sources"]
+            if item["id"] == "src_image"
+        )
+        assert locator == result["normalized_asset"]["url"]
+        with Image.open(io.BytesIO(client.get(locator).content)) as cropped:
+            assert cropped.size == (80, 100)
+        assert client.get(result["source_asset"]["url"]).content == path.read_bytes()
+        client.post("/api/v1/auth/logout")
+        assert client.get(locator).status_code == 401
+
+
 def test_web_oxs_import_preserves_cells_and_parameters(tmp_path):
     payload = (ROOT / "examples/minimal-pattern.oxs").read_bytes()
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         response = client.post(
             "/api/v1/projects/import-oxs",
             content=payload,
@@ -138,7 +194,7 @@ def test_web_oxs_import_preserves_cells_and_parameters(tmp_path):
     ],
 )
 def test_web_oxs_invalid_input_creates_no_partial_project(tmp_path, payload):
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         response = client.post(
             "/api/v1/projects/import-oxs",
             content=payload,
@@ -176,7 +232,7 @@ def test_codex_can_propose_high_detail_large_grid(tmp_path, monkeypatch):
 def test_automatic_generation_supports_full_600_square_grid(tmp_path, monkeypatch):
     monkeypatch.setenv("STITCHFORGE_CODEX_ENABLED", "0")
     payload = image(tmp_path, (1200, 1200)).read_bytes()
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = client.post("/api/v1/projects", json={"name": "Full grid"}).json()
         project_id = created["project"]["project_id"]
         head = created["initial_revision"]["revision_id"]

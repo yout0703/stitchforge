@@ -1,7 +1,7 @@
 """Real API + browser import checks in temporary storage; no user project writes.
 
 Run with frontend active: uv run --with playwright python tools/check_web_imports.py
-Codex is disabled only in the test API, so fallback conversion remains deterministic.
+The test API uses local analysis so conversion does not call external AI services.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from urllib.request import urlopen
 
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
+from stitchforge_storage import SQLiteStore
+from stitchforge_storage.accounts import AccountStore
 
 ROOT = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
@@ -25,13 +27,19 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    environment = {**os.environ, "STITCHFORGE_CODEX_ENABLED": "0"}
+    environment = {
+        **os.environ,
+        "STITCHFORGE_CODEX_ENABLED": "0",
+        "STITCHFORGE_AI_PROVIDER": "local",
+        "STITCHFORGE_PUBLIC_ORIGIN": "",
+    }
     process = subprocess.Popen(
         [
             sys.executable,
             "-c",
             "import sys,uvicorn; from stitchforge_api import create_app; "
-            'uvicorn.run(create_app(sys.argv[1]),host="127.0.0.1",port=int(sys.argv[2]))',
+            'uvicorn.run(create_app(sys.argv[1], start_worker=True),'
+            'host="127.0.0.1",port=int(sys.argv[2]))',
             str(work / "data"),
             str(port),
         ],
@@ -57,6 +65,20 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             browser = runner.chromium.launch(channel="chrome", headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 900})
 
+            registration = page.request.post(
+                f"http://127.0.0.1:{port}/api/v1/auth/register",
+                data={"email": "browser@example.com", "password": "browser-test-password"},
+                headers={"X-StitchForge-Request": "1"},
+            )
+            assert registration.status == 201
+            accounts = AccountStore(SQLiteStore(work / "data" / "metadata.sqlite3"))
+            order = accounts.create_order(
+                registration.json()["user_id"],
+                {"id": "test", "credits": 20, "amount_minor": 100, "currency": "CNY"},
+                "seed",
+            )
+            accounts.settle_order(order["order_id"], "test-payment", 100, "CNY")
+
             def api(route):
                 path = urlsplit(route.request.url)
                 url = f"http://127.0.0.1:{port}{path.path}" + (
@@ -66,14 +88,14 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
                 route.fulfill(response=response)
 
             page.route("**/api/v1/**", api)
-            page.goto("http://127.0.0.1:5173")
+            page.goto(os.environ.get("STITCHFORGE_WEB_URL", "http://127.0.0.1:5173"))
             page.get_by_role("button", name="导入图片", exact=True).click()
             dialog = page.get_by_role("dialog")
             assert dialog.get_by_role("spinbutton").count() == 0
             dialog.locator("input[type=file]").set_input_files(source)
-            dialog.get_by_role("button", name="自动生成图纸").click()
+            dialog.get_by_role("button", name="生成图纸 · 1 次").click()
             expect(dialog).not_to_be_visible(timeout=30000)
-            expect(page.get_by_text("20 × 30 格", exact=True)).to_be_visible()
+            expect(page.get_by_text("20 × 30 格", exact=True)).to_be_visible(timeout=30000)
             expect(page.get_by_role("button", name="查看模式")).to_have_attribute(
                 "aria-pressed", "true"
             )
@@ -83,11 +105,11 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             expect(page.get_by_text("本地分析", exact=True)).to_be_visible()
             print("PASS: automatic image conversion and plan persist on reload")
 
-            page.get_by_role("button", name="导入 OXS", exact=True).click()
+            page.get_by_role("button", name="OXS 免费导入", exact=True).click()
             page.get_by_role("dialog").locator("input[type=file]").set_input_files(
                 ROOT / "examples/minimal-pattern.oxs"
             )
-            page.get_by_role("button", name="导入图纸", exact=True).click()
+            page.get_by_role("button", name="免费导入图纸", exact=True).click()
             expect(page.get_by_role("dialog")).not_to_be_visible()
             expect(page.get_by_text("4 × 3 格", exact=True)).to_be_visible()
             expect(page.get_by_text("14 CT", exact=True).first).to_be_visible()
@@ -100,9 +122,9 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             expect(page.get_by_text("4 × 3 格", exact=True)).to_be_visible()
             print("PASS: OXS preserves grid, CT and thread brand, reload works")
 
-            page.get_by_role("button", name="导入 OXS", exact=True).click()
+            page.get_by_role("button", name="OXS 免费导入", exact=True).click()
             page.get_by_role("dialog").locator("input[type=file]").set_input_files(bad)
-            page.get_by_role("button", name="导入图纸", exact=True).click()
+            page.get_by_role("button", name="免费导入图纸", exact=True).click()
             expect(page.locator(".import-error")).to_be_visible()
             expect(page.get_by_text("4 × 3 格", exact=True)).to_be_visible()
             print("PASS: invalid OXS shows an error without replacing the current document")
@@ -136,9 +158,9 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
                     "buffer": source.read_bytes(),
                 }
             )
-            page.get_by_role("button", name="自动生成图纸", exact=True).click()
+            page.get_by_role("button", name="生成图纸 · 1 次", exact=True).click()
             expect(page.get_by_role("dialog")).not_to_be_visible(timeout=30000)
-            expect(page.locator(".document-title strong")).to_have_text("另一份作品")
+            expect(page.locator(".document-title strong")).to_have_text("另一份作品", timeout=30000)
             page.get_by_role("button", name="图纸库", exact=True).click()
             expect(cards).to_have_count(3)
             expect(cards.filter(has_text="我的灯塔图纸")).to_contain_text("4 × 3 格")
@@ -175,6 +197,7 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             page.keyboard.press("Control+a")
             page.get_by_role("button", name="清空选区", exact=True).click()
             expect(page.get_by_text("有未保存修改", exact=True)).to_be_visible()
+            expect(page.get_by_text("本地草稿已保存", exact=True)).to_be_visible()
             page.once("dialog", lambda dialog: dialog.dismiss())
             page.get_by_role("button", name="图纸库", exact=True).click()
             expect(library).not_to_be_visible()
@@ -186,12 +209,12 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             cards.filter(has_text="我的灯塔图纸").get_by_role(
                 "button", name="打开图纸", exact=True
             ).click()
-            expect(page.get_by_text("有未保存修改", exact=True)).not_to_be_visible()
+            expect(page.get_by_text("有未保存修改", exact=True)).to_be_visible()
             expect(page.locator('[data-recipe-index="1"]')).to_contain_text("TEST BLACK")
             expect(page.get_by_role("button", name="查看模式")).to_have_attribute(
                 "aria-pressed", "true"
             )
-            print("PASS: library navigation confirms unsaved changes; reopen resets to saved view")
+            print("PASS: library navigation confirms unsaved changes; reopen restores draft")
 
             # Invalid image input must leave the currently open project intact.
             page.get_by_role("button", name="导入图片", exact=True).click()
@@ -202,24 +225,26 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
                     "buffer": b"not an image",
                 }
             )
-            page.get_by_role("button", name="自动生成图纸", exact=True).click()
-            expect(page.locator(".import-error")).to_be_visible()
+            page.once("dialog", lambda dialog: dialog.accept())
+            page.get_by_role("button", name="生成图纸 · 1 次", exact=True).click()
+            expect(page.locator(".generation-status .api-error")).to_be_visible(timeout=30000)
             expect(page.locator(".document-title strong")).to_have_text("我的灯塔图纸")
-            page.get_by_role("button", name="关闭", exact=True).click()
+            page.once("dialog", lambda dialog: dialog.accept())
             page.get_by_role("button", name="图纸库", exact=True).click()
-            expect(cards).to_have_count(3)
-            print("PASS: failed image conversion keeps current project and cleans up empty entry")
+            expect(cards).to_have_count(4)
+            print("PASS: failed image conversion preserves current draft and keeps its job project")
 
             for index in range(23):
                 response = page.request.post(
                     f"http://127.0.0.1:{port}/api/v1/projects",
                     data={"name": f"分页测试 {index:02}"},
+                    headers={"X-StitchForge-Request": "1"},
                 )
                 assert response.status == 201
             page.get_by_role("button", name="刷新列表", exact=True).click()
             expect(cards).to_have_count(24)
             page.get_by_role("button", name="下一页", exact=True).click()
-            expect(cards).to_have_count(2)
+            expect(cards).to_have_count(3)
             page.get_by_role("button", name="上一页", exact=True).click()
             expect(cards).to_have_count(24)
             page.set_viewport_size({"width": 600, "height": 800})
@@ -230,6 +255,7 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             print("PASS: pagination and narrow-screen scrolling keep header actions visible")
             page.set_viewport_size({"width": 1440, "height": 900})
+            page.once("dialog", lambda dialog: dialog.accept())
             page.get_by_role("button", name="新建图纸", exact=True).click()
             expect(page.get_by_text("1 × 1 格", exact=True)).to_be_visible()
             page.get_by_role("button", name="图纸库", exact=True).click()

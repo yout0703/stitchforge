@@ -9,19 +9,27 @@ description = "Deterministic core for the StitchForge cross-stitch pattern workb
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "alipay-sdk-python>=3,<4",
   "colour-science>=0.4.6,<0.5",
+  "cryptography>=45,<51",
   "defusedxml>=0.7,<1",
   "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
   "jsonschema[format]>=4.25,<5",
   "numpy>=2.3,<3",
   "pillow>=12.1,<13",
+  "python-dotenv>=1.2,<2",
+  "qrcode[pil]>=8,<9",
   "reportlab>=4.4,<5",
+  "stripe>=15.6,<16",
   "uvicorn>=0.35,<1",
 ]
 
 [project.scripts]
 stitchforge = "stitchforge.cli:main"
 stitchforge-api = "stitchforge_api.main:run"
+stitchforge-worker = "stitchforge_api.worker:run"
+stitchforge-admin = "stitchforge_api.admin:run"
 
 [dependency-groups]
 dev = [

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { recipeSymbols } from '../lib/symbols'
 import { floodIndices } from '../lib/editor'
+import { StrokeBatch } from '../lib/strokeBatch'
 import { normalizeSelection } from '../lib/selection'
 import type { CellSelection, PatternDocument, Tool } from '../lib/types'
 import {
   cellSize,
+  pinchViewport,
+  type TouchPoint,
   fitViewport,
   lineCellIndices,
   screenToCell,
@@ -41,6 +44,7 @@ interface Gesture {
   y: number
   lastCell: CellPosition | null
   recipe?: number
+  distance?: number
 }
 
 function pointerPosition(event: PointerEvent<HTMLCanvasElement>) {
@@ -57,24 +61,29 @@ export function PatternCanvas({
   tool,
   selectedRecipe,
   selection,
-  onPaint,
+  onPaint: commitPaint,
   onEditBegin,
-  onEditEnd,
+  onEditEnd: finishEdit,
   onPick,
   onSelect,
   onHover,
 }: PatternCanvasProps) {
+  const batch = useMemo(() => new StrokeBatch(commitPaint), [commitPaint])
+  useEffect(() => () => batch.discard(), [batch])
+  const onPaint = (indices: readonly number[], recipe: number) => batch.add(indices, recipe)
+  const onEditEnd = useCallback(() => { batch.flush(); finishEdit() }, [batch, finishEdit])
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const editEndRef = useRef(onEditEnd)
   useEffect(() => { editEndRef.current = onEditEnd }, [onEditEnd])
   const gestureRef = useRef<Gesture | null>(null)
+  const touchesRef = useRef(new Map<number, TouchPoint>())
   const temporaryPanRef = useRef(false)
   const [surface, setSurface] = useState({ width: 0, height: 0, dpr: 1 })
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, offsetX: 48, offsetY: 44 })
   const [temporaryPan, setTemporaryPan] = useState(false)
   const [panning, setPanning] = useState(false)
-  const symbols = useMemo(() => recipeSymbols(document), [document])
+  const symbols = useMemo(() => recipeSymbols({ recipes: document.recipes, legend: document.legend }), [document.recipes, document.legend])
   const colors = useMemo(() => {
     const materials = new Map(document.materials.map((item) => [item.id, item]))
     return new Map(
@@ -278,6 +287,17 @@ export function PatternCanvas({
   function handlePointerDown(event: PointerEvent<HTMLCanvasElement>) {
     const position = pointerPosition(event)
     if (event.button !== 0 && event.button !== 1) return
+    if (event.pointerType === 'touch') {
+      touchesRef.current.set(event.pointerId, position)
+      if (touchesRef.current.size > 1) {
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        if (gestureRef.current?.kind === 'paint') onEditEnd()
+        gestureRef.current = null
+        setPanning(true)
+        return
+      }
+    }
     const pan = readOnly || shouldStartPan(tool, event.button, temporaryPanRef.current)
     if (!pan && event.button !== 0) return
     event.preventDefault()
@@ -329,6 +349,15 @@ export function PatternCanvas({
 
   function handlePointerMove(event: PointerEvent<HTMLCanvasElement>) {
     const position = pointerPosition(event)
+    if (touchesRef.current.has(event.pointerId)) {
+      const before = [...touchesRef.current.values()]
+      touchesRef.current.set(event.pointerId, position)
+      if (touchesRef.current.size >= 2) {
+        const after = [...touchesRef.current.values()]
+        setViewport(current => pinchViewport(current, [before[0], before[1]], [after[0], after[1]]))
+        return
+      }
+    }
     const cell = cellAt(event)
     onHover(cell ? { col: cell.col, row: cell.row } : null)
     const gesture = gestureRef.current
@@ -337,7 +366,8 @@ export function PatternCanvas({
       // Capture deltas before mutating the gesture: React may run the updater later.
       const deltaX = position.x - gesture.x
       const deltaY = position.y - gesture.y
-      if (Math.abs(deltaX) + Math.abs(deltaY) > 0) gesture.lastCell = null
+      gesture.distance = (gesture.distance ?? 0) + Math.hypot(deltaX, deltaY)
+      if (gesture.distance > 6) gesture.lastCell = null
       setViewport((current) => ({
         ...current,
         offsetX: current.offsetX + deltaX,
@@ -359,9 +389,17 @@ export function PatternCanvas({
   }
 
   function handlePointerEnd(event: PointerEvent<HTMLCanvasElement>) {
+    const wasPinching = touchesRef.current.size > 1
+    touchesRef.current.delete(event.pointerId)
+    if (wasPinching) {
+      const remaining = [...touchesRef.current.entries()][0]
+      gestureRef.current = remaining ? { pointerId: remaining[0], kind: 'pan', ...remaining[1], lastCell: null } : null
+      setPanning(Boolean(remaining))
+      return
+    }
     if (gestureRef.current?.pointerId === event.pointerId) {
       const wasPanning = gestureRef.current.kind === 'pan'
-      if (readOnly && wasPanning && gestureRef.current.lastCell) onPick(gestureRef.current.lastCell.index)
+      if (event.type === 'pointerup' && readOnly && wasPanning && gestureRef.current.lastCell) onPick(gestureRef.current.lastCell.index)
       if (gestureRef.current.kind === 'paint') onEditEnd()
       gestureRef.current = null
       if (wasPanning) setPanning(false)
@@ -389,7 +427,7 @@ export function PatternCanvas({
       <canvas
         ref={canvasRef}
         className={`pattern-canvas tool-${readOnly ? 'pan' : tool}${temporaryPan ? ' temporary-pan' : ''}${panning ? ' is-panning' : ''}`}
-        aria-label="可编辑十字绣针格"
+        aria-label={readOnly ? "十字绣图纸，拖动平移，双指缩放，点击查看线色" : "可编辑十字绣针格"}
         tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

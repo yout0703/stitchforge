@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from stitchforge.canonical import canonical_document_bytes, document_hash
+from stitchforge.commands import validate_locked_transition
 from stitchforge.validation import validate_document
 
+from .accounts import AccountError, debit_credit
 from .artifacts import SHA256_PATTERN, ContentAddressedArtifactStore, StoredArtifact
 
 JobState = Literal[
@@ -156,6 +158,17 @@ class SQLiteStore:
         return connection
 
     @contextmanager
+    def _reader(self) -> Iterator[sqlite3.Connection]:
+        """A consistent read snapshot that never reserves the database writer."""
+        connection = self._connect()
+        try:
+            connection.execute("PRAGMA query_only = ON")
+            connection.execute("BEGIN")
+            yield connection
+        finally:
+            connection.close()
+
+    @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
         connection = self._connect()
         try:
@@ -171,7 +184,7 @@ class SQLiteStore:
     def initialize(self) -> None:
         with self._transaction() as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1}:
+            if version not in {0, 1, 2}:
                 raise RuntimeError(f"不支持的 SQLite schema 版本: {version}")
             connection.executescript(
                 """
@@ -283,7 +296,14 @@ class SQLiteStore:
                     ON jobs(project_id, state);
                 CREATE INDEX IF NOT EXISTS artifacts_workspace
                     ON artifacts(workspace_id, created_at_ms);
-                PRAGMA user_version = 1;
+                CREATE TABLE IF NOT EXISTS generation_requests (
+                    workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
+                    request_key TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
+                    PRIMARY KEY(workspace_id, request_key)
+                );
+                PRAGMA user_version = 2;
                 """
             )
 
@@ -577,11 +597,23 @@ class SQLiteStore:
         expected_head_revision_id: str | None,
         document: dict[str, Any],
         now_ms: int,
+        charge_user_id: str | None = None,
+        owned_asset_hashes: Sequence[str] = (),
+        job_lease: tuple[str, str, int] | None = None,
+        job_result: dict[str, Any] | None = None,
     ) -> RevisionRecord:
         validate_document(document).raise_for_errors()
         payload = canonical_document_bytes(document).decode("utf-8")
         digest = document_hash(document)
         with self._transaction() as connection:
+            if job_lease is not None:
+                job = self._guard_lease(connection, *job_lease, now_ms, states=("RUNNING",))
+                if (
+                    job.project_id != project_id
+                    or job.input_revision_id != expected_head_revision_id
+                    or job.workspace_id != charge_user_id
+                ):
+                    raise StorageConflictError("任务结果与输入项目、版本或账号不一致")
             project = connection.execute(
                 "SELECT * FROM projects WHERE project_id = ?", (project_id,)
             ).fetchone()
@@ -592,6 +624,20 @@ class SQLiteStore:
             if project["head_revision_id"] != expected_head_revision_id:
                 raise StorageConflictError(
                     f"REVISION_CONFLICT: current={project['head_revision_id']!r}"
+                )
+            if expected_head_revision_id is not None:
+                previous = connection.execute(
+                    "SELECT document_json FROM revisions WHERE revision_id = ?",
+                    (expected_head_revision_id,),
+                ).fetchone()
+                validate_locked_transition(json.loads(previous["document_json"]), document)
+            if charge_user_id is not None:
+                if project["workspace_id"] != charge_user_id:
+                    raise StorageNotFoundError("图纸不存在")
+                debit_credit(connection, charge_user_id, revision_id, project_id, now_ms)
+                connection.executemany(
+                    "INSERT OR IGNORE INTO asset_access VALUES (?, ?)",
+                    [(charge_user_id, value) for value in owned_asset_hashes],
                 )
             try:
                 connection.execute(
@@ -625,7 +671,21 @@ class SQLiteStore:
                 "SELECT * FROM revisions WHERE revision_id = ?", (revision_id,)
             ).fetchone()
             assert row is not None
-            return self._revision_from_row(row)
+            revision = self._revision_from_row(row)
+            if job_lease is not None:
+                from dataclasses import asdict
+
+                connection.execute(
+                    "UPDATE jobs SET state = 'SUCCEEDED', stage = 'completed', result_json = ?, "
+                    "lease_owner = NULL, heartbeat_at_ms = NULL, lease_expires_at_ms = NULL, "
+                    "updated_at_ms = ? WHERE job_id = ?",
+                    (
+                        _json_text({**(job_result or {}), "revision": asdict(revision)}),
+                        now_ms,
+                        job_lease[0],
+                    ),
+                )
+            return revision
 
     def get_revision(self, revision_id: str) -> RevisionRecord:
         connection = self._connect()
@@ -705,11 +765,12 @@ class SQLiteStore:
                     f"REVISION_CONFLICT: current={project['head_revision_id']!r}"
                 )
             base = connection.execute(
-                "SELECT project_id FROM revisions WHERE revision_id = ?",
+                "SELECT project_id, document_json FROM revisions WHERE revision_id = ?",
                 (base_revision_id,),
             ).fetchone()
             if base is None or base["project_id"] != project_id:
                 raise StorageConflictError("基础版本不属于该项目")
+            validate_locked_transition(json.loads(base["document_json"]), document)
             try:
                 connection.execute(
                     """
@@ -769,6 +830,43 @@ class SQLiteStore:
                 self._revision_from_row(revision_row),
             )
 
+    @staticmethod
+    def _check_generation_capacity(connection, workspace_id: str) -> None:
+        active = connection.execute(
+            "SELECT workspace_id FROM jobs WHERE job_type = 'image_conversion' "
+            "AND state IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')"
+        ).fetchall()
+        if len(active) >= 32 or any(row[0] == workspace_id for row in active):
+            raise AccountError("GENERATION_BUSY", "已有生成任务，请等待完成或取消后再试。", 429)
+        user = connection.execute(
+            "SELECT credits FROM users WHERE user_id = ?", (workspace_id,)
+        ).fetchone()
+        if user is None or user[0] < 1:
+            raise AccountError("INSUFFICIENT_CREDITS", "生成次数不足，请先充值。", 402)
+
+    def preflight_generation(
+        self, project_id: str, workspace_id: str, request_key: str, input_revision_id: str
+    ) -> None:
+        with self._reader() as connection:
+            project = connection.execute(
+                "SELECT * FROM projects WHERE project_id = ?", (project_id,)
+            ).fetchone()
+            if project is None or project["workspace_id"] != workspace_id:
+                raise StorageNotFoundError("图纸不存在")
+            existing = connection.execute(
+                "SELECT 1 FROM generation_requests WHERE workspace_id = ? AND request_key = ?",
+                (workspace_id, request_key),
+            ).fetchone()
+            if existing is not None:
+                return
+            if project["deleted_at_ms"] is not None:
+                raise StorageConflictError("已删除项目不能创建任务")
+            if project["head_revision_id"] != input_revision_id:
+                raise StorageConflictError(
+                    f"REVISION_CONFLICT: current={project['head_revision_id']!r}"
+                )
+            self._check_generation_capacity(connection, workspace_id)
+
     def enqueue_job(
         self,
         job_id: str,
@@ -780,6 +878,7 @@ class SQLiteStore:
         max_attempts: int = 2,
         retryable: bool = True,
         now_ms: int,
+        request_key: str | None = None,
     ) -> JobRecord:
         if max_attempts < 1:
             raise ValueError("max_attempts 必须至少为 1")
@@ -790,6 +889,29 @@ class SQLiteStore:
             ).fetchone()
             if project is None:
                 raise StorageNotFoundError(f"项目不存在: {project_id}")
+            if request_key is not None:
+                if job_type != "image_conversion" or not 16 <= len(request_key) <= 128:
+                    raise ValueError("生成请求编号无效")
+                fingerprint = _parameters_hash(
+                    {
+                        "project_id": project_id,
+                        "input_revision_id": input_revision_id,
+                        "parameters": parameters,
+                    }
+                )
+                existing = connection.execute(
+                    "SELECT * FROM generation_requests WHERE workspace_id = ? AND request_key = ?",
+                    (project["workspace_id"], request_key),
+                ).fetchone()
+                if existing is not None:
+                    if existing["fingerprint"] != fingerprint:
+                        raise StorageConflictError("生成请求编号已用于不同内容")
+                    return self._get_job(connection, existing["job_id"])
+                self._check_generation_capacity(connection, project["workspace_id"])
+                if input_revision_id != project["head_revision_id"]:
+                    raise StorageConflictError(
+                        f"REVISION_CONFLICT: current={project['head_revision_id']!r}"
+                    )
             if project["deleted_at_ms"] is not None:
                 raise StorageConflictError("已删除项目不能创建任务")
             if input_revision_id is not None:
@@ -824,6 +946,15 @@ class SQLiteStore:
                 )
             except sqlite3.IntegrityError as error:
                 raise StorageConflictError(f"无法创建任务: {job_id}") from error
+            if request_key is not None:
+                connection.execute(
+                    "INSERT INTO generation_requests VALUES (?, ?, ?, ?)",
+                    (project["workspace_id"], request_key, fingerprint, job_id),
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO asset_access VALUES (?, ?)",
+                    (project["workspace_id"], parameters["source_sha256"]),
+                )
             return self._get_job(connection, job_id)
 
     def _get_job(self, connection: sqlite3.Connection, job_id: str) -> JobRecord:
@@ -831,6 +962,16 @@ class SQLiteStore:
         if row is None:
             raise StorageNotFoundError(f"任务不存在: {job_id}")
         return self._job_from_row(row)
+
+    def get_generation_request(self, workspace_id: str, request_key: str) -> JobRecord:
+        with self._reader() as connection:
+            row = connection.execute(
+                "SELECT job_id FROM generation_requests WHERE workspace_id = ? AND request_key = ?",
+                (workspace_id, request_key),
+            ).fetchone()
+            if row is None:
+                raise StorageNotFoundError("生成请求不存在，上传可能尚未完成")
+            return self._get_job(connection, row["job_id"])
 
     def get_job(self, job_id: str) -> JobRecord:
         connection = self._connect()
@@ -909,20 +1050,32 @@ class SQLiteStore:
         *,
         lease_seconds: int = 60,
         now_ms: int,
+        job_type: str | None = None,
+        max_running: int | None = None,
     ) -> JobRecord | None:
         if lease_seconds < 1:
             raise ValueError("lease_seconds 必须至少为 1")
         with self._transaction() as connection:
             self._recover_expired(connection, now_ms=now_ms)
+            if max_running is not None:
+                running = connection.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE state IN ('RUNNING', 'CANCEL_REQUESTED') "
+                    "AND (? IS NULL OR job_type = ?)",
+                    (job_type, job_type),
+                ).fetchone()[0]
+                if running >= max_running:
+                    return None
             row = connection.execute(
                 """
                 SELECT jobs.job_id
                 FROM jobs
                 JOIN projects ON projects.project_id = jobs.project_id
                 WHERE jobs.state = 'QUEUED' AND projects.deleted_at_ms IS NULL
+                  AND (? IS NULL OR jobs.job_type = ?)
                 ORDER BY jobs.created_at_ms, jobs.job_id
                 LIMIT 1
-                """
+                """,
+                (job_type, job_type),
             ).fetchone()
             if row is None:
                 return None

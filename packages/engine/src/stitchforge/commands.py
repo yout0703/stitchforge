@@ -46,9 +46,47 @@ def _locked_indices(document: dict[str, Any]) -> set[int]:
     return locked
 
 
-def apply_cell_updates(
-    document: dict[str, Any], updates: list[tuple[int, int]]
-) -> CommandResult:
+def validate_locked_transition(before: dict[str, Any], after: dict[str, Any]) -> None:
+    """Protect physical stitch semantics at every document persistence boundary."""
+    locked = _locked_indices(before)
+    if not locked:
+        return
+    fabric_fields = ("type", "count", "count_unit", "worked_over", "display_srgb")
+    if before["grid"] != after["grid"] or any(
+        before["fabric"][field] != after["fabric"][field] for field in fabric_fields
+    ):
+        raise LockConflictError(sorted(locked))
+
+    def meanings(document: dict[str, Any]) -> dict[int, Any]:
+        materials = {item["id"]: item for item in document["materials"]}
+        return {
+            0: None,
+            **{
+                recipe["index"]: (
+                    document["full_stitches"]["top_leg"],
+                    [
+                        (materials[component["material_id"]], component["strands"])
+                        for component in recipe["components"]
+                    ],
+                )
+                for recipe in document["recipes"]
+            },
+        }
+
+    old_meanings, new_meanings = meanings(before), meanings(after)
+    retained_locks = _locked_indices(after)
+    conflicts = [
+        index
+        for index in sorted(locked)
+        if index not in retained_locks
+        or old_meanings[before["full_stitches"]["cells"][index]]
+        != new_meanings[after["full_stitches"]["cells"][index]]
+    ]
+    if conflicts:
+        raise LockConflictError(conflicts)
+
+
+def apply_cell_updates(document: dict[str, Any], updates: list[tuple[int, int]]) -> CommandResult:
     cells = document["full_stitches"]["cells"]
     allowed_recipes = {0, *(recipe["index"] for recipe in document["recipes"])}
     normalized: dict[int, int] = {}

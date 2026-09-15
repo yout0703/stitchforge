@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from conftest import AccountClient
 from PIL import Image
 from stitchforge_api import create_app
 
@@ -19,7 +19,7 @@ def create(client, name="图纸"):
 
 
 def test_library_pagination_search_sort_and_workspace_isolation(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         store = client.app.state.store
         store.ensure_workspace("other", now_ms=1)
         store.create_project("private", workspace_id="other", name="隐藏图纸", now_ms=1)
@@ -44,7 +44,7 @@ def test_library_pagination_search_sort_and_workspace_isolation(tmp_path):
 
 
 def test_rename_is_versioned_atomic_and_survives_restart(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         created = create(client, "旧名称")
         project_id = created["project"]["project_id"]
         initial = created["initial_revision"]
@@ -88,14 +88,14 @@ def test_rename_is_versioned_atomic_and_survives_restart(tmp_path):
             ).status_code
             == 422
         )
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         item = client.get("/api/v1/projects").json()["items"][0]
         assert item["name"] == "新名称"
         assert item["head_revision_id"] == head
 
 
 def test_revision_save_keeps_library_name_in_sync(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         created = create(client)
         project_id = created["project"]["project_id"]
         document = deepcopy(created["initial_revision"]["document"])
@@ -112,7 +112,7 @@ def test_revision_save_keeps_library_name_in_sync(tmp_path):
 
 
 def test_trash_restore_preserves_oxs_and_history(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         imported = client.post(
             "/api/v1/projects/import-oxs",
             content=(ROOT / "examples/minimal-pattern.oxs").read_bytes(),
@@ -141,7 +141,7 @@ def test_trash_restore_preserves_oxs_and_history(tmp_path):
 
 
 def test_thumbnail_exact_colors_aspect_and_revision_ownership(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         imported = client.post(
             "/api/v1/projects/import-oxs",
             content=(ROOT / "examples/minimal-pattern.oxs").read_bytes(),
@@ -154,7 +154,7 @@ def test_thumbnail_exact_colors_aspect_and_revision_ownership(tmp_path):
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
-        assert "immutable" in response.headers["cache-control"]
+        assert response.headers["cache-control"] == "private, no-cache"
         with Image.open(io.BytesIO(response.content)) as image:
             assert image.size == (320, 240)
             assert image.getpixel((0, 0)) == (0, 0, 0)
@@ -180,7 +180,7 @@ def test_thumbnail_exact_colors_aspect_and_revision_ownership(tmp_path):
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "sort=arbitrary"])
 def test_invalid_library_query(tmp_path, query):
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         assert client.get(f"/api/v1/projects?{query}").status_code == 422
 
 
@@ -192,7 +192,7 @@ def test_large_oxs_import_save_reload_and_library_thumbnail(tmp_path):
     payload = payload.replace(
         b"</fullstitches>", b'<stitch x="479" y="303" palindex="1"/></fullstitches>'
     )
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         response = client.post(
             "/api/v1/projects/import-oxs",
             content=payload,
@@ -215,7 +215,7 @@ def test_large_oxs_import_save_reload_and_library_thumbnail(tmp_path):
         )
         assert saved.status_code == 201
         head = saved.json()["revision_id"]
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         restored = client.get(f"/api/v1/projects/{project_id}/revisions/{head}").json()["document"]
         assert restored == document
         listed = client.get("/api/v1/projects").json()["items"][0]
@@ -231,7 +231,7 @@ def test_oxs_error_summary_omits_nonblocking_warnings(tmp_path):
 
     root = ElementTree.fromstring((ROOT / "examples/minimal-pattern.oxs").read_bytes())
     root.find("properties").set("software", "长说明" * 4000)
-    with TestClient(create_app(tmp_path)) as client:
+    with AccountClient(create_app(tmp_path)) as client:
         response = client.post(
             "/api/v1/projects/import-oxs",
             content=ElementTree.tostring(root),

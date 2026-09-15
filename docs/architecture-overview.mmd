@@ -1,0 +1,47 @@
+flowchart TB
+  UI["React / TypeScript 工作台<br/>登录、图纸库、导入、查看、编辑、下载"]
+  API["FastAPI /api/v1<br/>会话、归属、写请求校验、版本前置条件"]
+  UI --> API
+
+  subgraph PIPE["当前图片转换：在 API 请求中同步执行"]
+    N["图片规范化<br/>格式/大小、EXIF、ICC → sRGB"]
+    C["自动：针距检测与候选"]
+    R["已有候选：可选 DeepSeek 结构复核<br/>必要复核未通过则停止，不扣次"]
+    P["没有选中候选：参数规划<br/>DeepSeek / Codex / 本地降级"]
+    S["复用候选或采样<br/>可选去底布、裁边、浅色恢复"]
+    K["DMC 受限配色"]
+    Q["普通图片：小色块优化<br/>针距还原：轮廓与独立线色复核"]
+    N --> C
+    C -->|有候选| R
+    C -->|无候选| P
+    R -->|可采用| S
+    P -->|参数校验通过| S
+    N -->|手动网格参数| S
+    S --> K --> Q
+  end
+
+  API -->|图片| N
+  API -->|OXS / 空白新建| O["全针导入或新建"]
+  API -->|网页手动保存| E["本地编辑后提交整份文档<br/>撤销历史当前仅在浏览器"]
+  O --> D
+  E --> D
+  Q --> D["PatternDocument + 不可变 Revision<br/>生成扣次与版本同事务提交"]
+
+  D --> DB[("SQLite<br/>项目、版本、账号、任务、命令、订单、账本")]
+  N -->|原始与规范素材| FS["本地 SHA-256 内容寻址存储"]
+  S -->|对照裁图| FS
+  D -.->|通过哈希引用| FS
+  D --> OUT["网页：PNG / OXS<br/>CLI：另有 PDF / CSV / 工程包等"]
+  CLI["stitchforge CLI<br/>直接复用引擎离线处理"] --> OUT
+
+  API --> PAY["充值与支付适配器<br/>微信 / 支付宝 / Stripe<br/>真实联调待完成"]
+  PAY --> DB
+  API --> JOB["通用任务接口与存储已实现<br/>领取、租约、心跳、取消"]
+  JOB -.-> W["独立执行器尚未接入<br/>任务不会自动开始执行"]
+
+  classDef core fill:#ecf7f3,stroke:#78b79f,color:#18313d
+  classDef data fill:#eeebfb,stroke:#b0a5d8,color:#18313d
+  classDef pending fill:#fff6e8,stroke:#dca455,stroke-dasharray:7 5,color:#18313d
+  class N,C,R,P,S,K,Q core
+  class D,DB,FS data
+  class W pending

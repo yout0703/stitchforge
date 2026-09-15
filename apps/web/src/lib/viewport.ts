@@ -154,3 +154,13 @@ export function lineCellIndices(
   }
   return indices
 }
+
+export interface TouchPoint { x: number; y: number }
+
+export function pinchViewport(viewport: Viewport, before: readonly [TouchPoint, TouchPoint], after: readonly [TouchPoint, TouchPoint]): Viewport {
+  const distance = (pair: readonly [TouchPoint, TouchPoint]) => Math.hypot(pair[1].x - pair[0].x, pair[1].y - pair[0].y)
+  const center = (pair: readonly [TouchPoint, TouchPoint]) => ({ x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 })
+  const oldCenter = center(before), newCenter = center(after)
+  const zoomed = zoomAt(viewport, distance(after) / Math.max(1, distance(before)), oldCenter.x, oldCenter.y)
+  return { ...zoomed, offsetX: zoomed.offsetX + newCenter.x - oldCenter.x, offsetY: zoomed.offsetY + newCenter.y - oldCenter.y }
+}

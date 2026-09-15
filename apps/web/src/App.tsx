@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
+import { useProjectDraft } from './hooks/useProjectDraft'
+import { useGeneration } from './hooks/useGeneration'
+import { AccountPanel } from './components/AccountPanel'
+import { DownloadPanel } from './components/DownloadPanel'
+import type { User } from './lib/account'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { PatternCanvas } from './components/PatternCanvas'
 import {
-  convertProjectImage,
-  deleteProject,
+  ApiError,
   createProject,
   createRevision,
   getProject,
@@ -16,10 +20,25 @@ import { createEditor, editorReducer, isDirty } from './lib/editor'
 import { makeDemoPattern } from './lib/demoPattern'
 import { recipeSymbols } from './lib/symbols'
 import { selectionIndices } from './lib/selection'
+import {
+  IconBrush,
+  IconBucket,
+  IconCredit,
+  IconDownload,
+  IconEraser,
+  IconFileCode,
+  IconFolder,
+  IconHand,
+  IconMarquee,
+  IconPipette,
+  IconPlus,
+  IconSparkles,
+} from './components/Icons'
 import type {
   CellSelection,
   ImageConversionResponse,
   PatternDocument,
+  RareColorSummary,
   Tool,
 } from './lib/types'
 
@@ -32,7 +51,15 @@ const TOOLS: { id: Tool; label: string; shortcut: string }[] = [
   { id: 'fill', label: '填色', shortcut: 'G' },
 ]
 
-const LAST_PROJECT_KEY = 'stitchforge.lastProjectId'
+const TOOL_ICONS: Record<Tool, typeof IconBrush> = {
+  paint: IconBrush,
+  pick: IconPipette,
+  select: IconMarquee,
+  pan: IconHand,
+  erase: IconEraser,
+  fill: IconBucket,
+}
+
 
 function sourceUrlFromDocument(document: PatternDocument): string | null {
   const provenance = document.provenance as
@@ -42,7 +69,14 @@ function sourceUrlFromDocument(document: PatternDocument): string | null {
   return locator?.startsWith('/api/v1/assets/') ? locator : null
 }
 
-function App() {
+function App({ user, onLogout, onAccountRefresh }: {
+  user: User; onLogout: () => Promise<void>; onAccountRefresh: () => Promise<void>
+}) {
+  const generation = useGeneration(user.user_id)
+  const autoOpenGeneration = useRef<{ epoch: number; document: PatternDocument } | null>(null)
+  const LAST_PROJECT_KEY = `stitchforge.lastProjectId.${user.user_id}`
+  const [accountOpen, setAccountOpen] = useState(() => window.location.hash.startsWith('#billing'))
+  const [downloadOpen, setDownloadOpen] = useState(false)
   const [editor, dispatch] = useReducer(editorReducer, undefined, () => createEditor(makeDemoPattern()))
   const { document } = editor
   const dirty = isDirty(editor)
@@ -50,7 +84,7 @@ function App() {
   const [libraryBusy, setLibraryBusy] = useState(false)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [highlightedRecipe, setHighlightedRecipe] = useState<number | null>(null)
-  const [showSymbols, setShowSymbols] = useState(false)
+  const [showSymbols, setShowSymbols] = useState(true)
   const [showGrid, setShowGrid] = useState(true)
   const [tool, setTool] = useState<Tool>('paint')
   const [selectedRecipe, setSelectedRecipe] = useState(1)
@@ -59,6 +93,11 @@ function App() {
   const [createState, setCreateState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [saveState, setSaveState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [session, setSession] = useState<{ projectId: string; headRevisionId: string } | null>(null)
+  const projectDraft = useProjectDraft(user.user_id, session, editor)
+  const restoreProjectDraft = projectDraft.restore
+  const [draftConflict, setDraftConflict] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const operationEpoch = useRef(0)
   const [viewMode, setViewMode] = useState<'pattern' | 'source'>('pattern')
   const [sourceFullView, setSourceFullView] = useState(true)
   const [fitRequest, setFitRequest] = useState(0)
@@ -85,14 +124,9 @@ function App() {
     }))
   }, [document.materials, document.recipes])
 
-  const symbols = useMemo(() => recipeSymbols(document), [document])
-  const recipeCounts = useMemo(() => {
-    const counts = new Map<number, number>()
-    for (const recipe of document.full_stitches.cells) {
-      if (recipe > 0) counts.set(recipe, (counts.get(recipe) ?? 0) + 1)
-    }
-    return counts
-  }, [document.full_stitches.cells])
+  const symbols = useMemo(() => recipeSymbols({ recipes: document.recipes, legend: document.legend }), [document.recipes, document.legend])
+  const recipeCounts = editor.recipeCounts
+  const rareColorSummary = document.extensions?.['stitchforge.rare_colors'] as RareColorSummary | undefined
 
   const hoveredRecipeIndex = hoveredCell ? document.full_stitches.cells[hoveredCell.row * document.grid.width + hoveredCell.col] : null
   const hoveredMaterial = palette.find((recipe) => recipe.index === hoveredRecipeIndex)?.material
@@ -109,7 +143,7 @@ function App() {
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       const target = event.target
-      if (libraryOpen || importOpen || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
+      if (downloadOpen || accountOpen || libraryOpen || importOpen || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return
       if (event.altKey) return
       const key = event.key.toLowerCase()
@@ -157,17 +191,20 @@ function App() {
     const projectId = window.localStorage.getItem(LAST_PROJECT_KEY)
     if (!projectId) return
     let cancelled = false
+    const epoch = ++operationEpoch.current
     async function restore() {
       try {
         const project = await getProject(projectId as string)
         if (!project.head_revision_id || project.deleted_at_ms) throw new Error('图纸已移入回收站或没有可打开版本')
         const revision = await getRevision(project.project_id, project.head_revision_id)
-        if (cancelled) return
-        dispatch({ type: 'reset', document: revision.document })
+        const restored = await restoreProjectDraft(project.project_id, revision.revision_id, revision.document)
+        if (cancelled || epoch !== operationEpoch.current) return
+        dispatch({ type: 'restore', state: restored.editor })
+        setDraftConflict(restored.conflict)
         setHighlightedRecipe(null)
         setSession({
           projectId: project.project_id,
-          headRevisionId: revision.revision_id,
+          headRevisionId: restored.baseRevisionId,
         })
         setSourceImageUrl(sourceUrlFromDocument(revision.document))
         setSelectedRecipe(revision.document.recipes[0]?.index ?? 0)
@@ -183,11 +220,11 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [LAST_PROJECT_KEY, restoreProjectDraft])
 
-  function paintCells(indices: readonly number[], recipeIndex: number, label = '画笔') {
+  const paintCells = useCallback((indices: readonly number[], recipeIndex: number, label = '画笔') => {
     dispatch({ type: 'paint', indices, recipe: recipeIndex, label })
-  }
+  }, [])
 
   function pickCell(index: number) {
     const recipe = document.full_stitches.cells[index]
@@ -202,17 +239,25 @@ function App() {
   }
 
   function showLibrary() {
-    if (dirty && !window.confirm('当前图纸有未保存修改。确定放弃修改并返回图纸库？')) return
-    if (dirty) dispatch({ type: 'reset', document: editor.savedDocument })
+    if (dirty && !window.confirm('当前图纸有未保存修改，返回图纸库？重新打开时将尝试恢复本地草稿。')) return
     setLibraryOpen(true)
   }
 
-  async function openLibraryProject(projectId: string) {
+  async function openLibraryProject(projectId: string, discardDraft = false) {
+    const epoch = ++operationEpoch.current
     const project = await getProject(projectId)
     if (!project.head_revision_id || project.deleted_at_ms) throw new Error('图纸已移入回收站或没有可打开版本')
     const revision = await getRevision(projectId, project.head_revision_id)
-    dispatch({ type: 'reset', document: revision.document })
-    setSession({ projectId, headRevisionId: revision.revision_id })
+    const restored = discardDraft
+      ? { editor: createEditor(revision.document), baseRevisionId: revision.revision_id, conflict: false }
+      : await restoreProjectDraft(projectId, revision.revision_id, revision.document)
+    if (epoch !== operationEpoch.current) return
+    // Delete the draft only after the server version has actually been fetched.
+    if (discardDraft) await projectDraft.discard(projectId)
+    if (epoch !== operationEpoch.current) return
+    dispatch({ type: 'restore', state: restored.editor })
+    setDraftConflict(restored.conflict)
+    setSession({ projectId, headRevisionId: restored.baseRevisionId })
     window.localStorage.setItem(LAST_PROJECT_KEY, projectId)
     setSourceImageUrl(sourceUrlFromDocument(revision.document))
     setSelectedRecipe(revision.document.recipes[0]?.index ?? 0)
@@ -231,10 +276,13 @@ function App() {
   }
 
   async function startBlankProject() {
-    if (dirty && !window.confirm('当前图纸有未保存修改。确定放弃修改并新建图纸？')) return
+    if (dirty && !window.confirm('当前图纸有未保存修改，继续新建图纸？重新打开时将尝试恢复本地草稿。')) return
+    const epoch = ++operationEpoch.current
     setCreateState('loading')
     try {
       const created = await createProject('未命名图纸')
+      if (epoch !== operationEpoch.current) return
+      setDraftConflict(false)
       dispatch({ type: 'reset', document: created.initial_revision.document })
       setHighlightedRecipe(null)
       setSelectedRecipe(0)
@@ -261,21 +309,18 @@ function App() {
 
   async function importImage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const file = form.get('image')
-    if (!(file instanceof File) || file.size === 0) {
-      setImportState('error')
-      setImportError(importKind === 'oxs' ? '请选择 OXS 文件' : '请选择一张 JPG 或 PNG 图片')
-      return
-    }
-    if (dirty && !window.confirm('生成新图纸会替换当前未保存修改。确定继续？')) return
+    const file = new FormData(event.currentTarget).get('image')
+    if (!(file instanceof File) || file.size === 0) { setImportError('请选择文件'); return }
+    if (dirty && !window.confirm('当前修改已保留在本地草稿，继续导入新图纸？')) return
+    const epoch = ++operationEpoch.current
     setImportState('loading')
     setImportError(null)
-    let pendingProjectId: string | null = null
     try {
       if (importKind === 'oxs') {
         if (file.size > 16 * 1024 * 1024) throw new Error('OXS 文件超过 16 MiB 限制')
         const imported = await importOxsProject(file)
+        if (epoch !== operationEpoch.current) return
+        setDraftConflict(false)
         dispatch({ type: 'reset', document: imported.initial_revision.document })
         setSession({ projectId: imported.project.project_id, headRevisionId: imported.initial_revision.revision_id })
         window.localStorage.setItem(LAST_PROJECT_KEY, imported.project.project_id)
@@ -294,59 +339,122 @@ function App() {
         setImportState('idle')
         return
       }
+      if (user.credits < 1 && !generation.pending) throw new Error('生成次数不足，请先充值。')
       if (file.size > 20 * 1024 * 1024) throw new Error('图片文件超过 20 MiB 限制')
-      const title = file.name.replace(/\.[^.]+$/, '') || '图片图纸'
-      const created = await createProject(title)
-      pendingProjectId = created.project.project_id
-      const activeSession = {
-        projectId: created.project.project_id,
-        headRevisionId: created.initial_revision.revision_id,
-      }
-      const result = await convertProjectImage(activeSession.projectId, file, {
-        expectedHeadRevisionId: activeSession.headRevisionId,
-        automatic: true,
-      })
-      pendingProjectId = null
-      setLibraryOpen(false)
-      setHoveredCell(null)
-      dispatch({ type: 'reset', document: result.revision.document })
-      setHighlightedRecipe(null)
-      setSession({
-        projectId: activeSession.projectId,
-        headRevisionId: result.revision.revision_id,
-      })
-      window.localStorage.setItem(LAST_PROJECT_KEY, activeSession.projectId)
-      setMode('view')
-      setSourceFullView(true)
-      setFitRequest((current) => current + 1)
-      setImportNotice(null)
-      setSourceImageUrl(result.source_asset.url)
-      setConversionSummary(result)
-      setSelectedRecipe(result.revision.document.recipes[0]?.index ?? 0)
-      setSelection(null)
-      setViewMode('pattern')
+      autoOpenGeneration.current = { epoch, document }
+      await generation.start(file)
+      if (epoch !== operationEpoch.current) return
       setImportOpen(false)
       setImportState('idle')
     } catch (error) {
-      if (pendingProjectId) {
-        try { await deleteProject(pendingProjectId) } catch { /* The empty project remains available in the library. */ }
-      }
+      if (epoch !== operationEpoch.current) return
       setImportState('error')
       setImportError(error instanceof Error ? error.message : '导入失败')
     }
   }
 
-  async function saveRevision() {
-    if (!session || !dirty || editor.active || saveState === 'loading') return
+  useEffect(() => {
+    const result = generation.job?.result
+    const target = autoOpenGeneration.current
+    if (generation.job?.state !== 'SUCCEEDED' || !result || !target) return
+    autoOpenGeneration.current = null
+    if (target.epoch !== operationEpoch.current || target.document !== document) return
+    dispatch({ type: 'reset', document: result.revision.document })
+    setSession({ projectId: generation.job.project_id, headRevisionId: result.revision.revision_id })
+    window.localStorage.setItem(LAST_PROJECT_KEY, generation.job.project_id)
+    setSourceImageUrl(result.normalized_asset.url)
+    setConversionSummary(result)
+    setSelectedRecipe(result.revision.document.recipes[0]?.index ?? 0)
+    setHighlightedRecipe(null)
+    setSelection(null)
+    setMode('view')
+    setViewMode('pattern')
+    setFitRequest(value => value + 1)
+    setLibraryOpen(false)
+    setDraftConflict(false)
+    generation.acknowledge()
+    void onAccountRefresh()
+  }, [generation, document, LAST_PROJECT_KEY, onAccountRefresh])
+
+  async function openGeneratedProject() {
+    if (!generation.job || generation.job.state !== 'SUCCEEDED') return
+    if (dirty && !window.confirm('当前修改已保留在本地草稿，打开生成图纸？')) return
+    await openLibraryProject(generation.job.project_id)
+    generation.acknowledge()
+    void onAccountRefresh()
+  }
+
+  async function prepareDownload() {
+    if (!session || editor.active || saveState === 'loading') throw new Error('图纸尚未就绪，请稍后再试')
+    if (!dirty) return session
+    const epoch = operationEpoch.current
+    setSaveError('')
     setSaveState('loading')
     try {
       const revision = await createRevision(session.projectId, session.headRevisionId, document)
+      if (epoch !== operationEpoch.current) throw new Error('图纸已切换，请重新下载')
+      const savedSession = { ...session, headRevisionId: revision.revision_id }
+      setSession(savedSession)
+      dispatch({ type: 'saved', document })
+      setDraftConflict(false)
+      setSaveState('idle')
+      return savedSession
+    } catch (error) {
+      if (epoch === operationEpoch.current) {
+        setSaveState('error')
+        setSaveError(error instanceof Error ? error.message : '保存失败')
+        if (error instanceof ApiError && error.code === 'REVISION_CONFLICT') setDraftConflict(true)
+      }
+      throw error
+    }
+  }
+
+  async function saveRevision() {
+    if (!session || !dirty || editor.active || saveState === 'loading') return
+    const epoch = operationEpoch.current
+    setSaveError('')
+    setSaveState('loading')
+    try {
+      const revision = await createRevision(session.projectId, session.headRevisionId, document)
+      if (epoch !== operationEpoch.current) return
       setSession({ ...session, headRevisionId: revision.revision_id })
       window.localStorage.setItem(LAST_PROJECT_KEY, session.projectId)
       dispatch({ type: 'saved', document })
+      setDraftConflict(false)
       setSaveState('idle')
-    } catch {
+    } catch (error) {
+      if (epoch !== operationEpoch.current) return
       setSaveState('error')
+      setSaveError(error instanceof Error ? error.message : '保存失败')
+      if (error instanceof ApiError && error.code === 'REVISION_CONFLICT') setDraftConflict(true)
+    }
+  }
+
+  async function loadServerVersion() {
+    if (!session || !window.confirm('放弃当前本地草稿并载入服务器版本？')) return
+    await openLibraryProject(session.projectId, true)
+    setSaveError('')
+  }
+
+  async function saveDraftCopy() {
+    if (!session || saveState === 'loading') return
+    const epoch = ++operationEpoch.current
+    setSaveState('loading')
+    try {
+      const created = await createProject(`${document.metadata.title} · 草稿副本`)
+      const copy = { ...document, metadata: { ...document.metadata, title: `${document.metadata.title} · 草稿副本` } }
+      const saved = await createRevision(created.project.project_id, created.initial_revision.revision_id, copy)
+      if (epoch !== operationEpoch.current) return
+      dispatch({ type: 'reset', document: copy })
+      setSession({ projectId: created.project.project_id, headRevisionId: saved.revision_id })
+      window.localStorage.setItem(LAST_PROJECT_KEY, created.project.project_id)
+      setDraftConflict(false)
+      setSaveState('idle')
+      setSaveError('')
+    } catch (error) {
+      if (epoch !== operationEpoch.current) return
+      setSaveState('error')
+      setSaveError(error instanceof Error ? error.message : '另存失败，本地草稿已保留')
     }
   }
 
@@ -362,27 +470,39 @@ function App() {
         </div>
         <div className="document-title">
           <strong>{libraryOpen ? '图纸库' : document.metadata.title}</strong>
-          <span>{libraryOpen ? '管理本机的所有作品' : dirty ? '有未保存修改' : session ? '已保存到本机' : '示例预览'}</span>
+          <span>{libraryOpen ? '管理你的所有作品' : dirty ? '有未保存修改' : session ? '已保存到账号' : '示例预览'}</span>
         </div>
         <div className="header-actions">
-          {!libraryOpen && <button className="quiet-button" type="button" disabled={saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || !!editor.active} onClick={showLibrary}>图纸库</button>}
+          <button className="quiet-button account-button" type="button" disabled={importState === 'loading'} onClick={() => setAccountOpen(true)}>
+            <IconCredit aria-hidden="true" />
+            <span>{user.credits} 次 / 账号</span>
+          </button>
+          {!libraryOpen && <button className="quiet-button" type="button" disabled={saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || !!editor.active} onClick={showLibrary}>
+            <IconFolder aria-hidden="true" />
+            <span>图纸库</span>
+          </button>}
           {(createState === 'error' || saveState === 'error') && (
-            <span className="api-error">本机保存失败</span>
+            <span className="api-error">保存失败</span>
           )}
           {restoreState === 'loading' && <span className="restore-state">正在恢复上次图纸…</span>}
           {restoreState === 'error' && <span className="api-error">上次图纸无法打开</span>}
           <button className="quiet-button" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'} onClick={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}>
-            导入图片
+            <IconSparkles aria-hidden="true" />
+            <span>导入图片</span>
           </button>
           <button className="quiet-button" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
-            onClick={() => { setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>导入 OXS</button>
+            onClick={() => { setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>
+            <IconFileCode aria-hidden="true" />
+            <span>OXS 免费导入</span>
+          </button>
           <button
             className="quiet-button new-project-button"
             type="button"
             onClick={startBlankProject}
             disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
           >
-            {createState === 'loading' ? '创建中…' : '新建图纸'}
+            <IconPlus aria-hidden="true" />
+            <span>{createState === 'loading' ? '创建中…' : '新建图纸'}</span>
           </button>
           {!libraryOpen && mode === 'edit' && <button
             className="primary-button"
@@ -392,9 +512,31 @@ function App() {
           >
             {saveState === 'loading' ? '保存中…' : '保存版本'}
           </button>}
+          {!libraryOpen && <button className="primary-button" type="button"
+            disabled={!session || !!editor.active || saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || importState === 'loading'}
+            onClick={() => setDownloadOpen(true)}>
+            <IconDownload aria-hidden="true" />
+            <span>下载图纸</span>
+          </button>}
         </div>
       </header>
 
+      <div className="workbench-notices">
+      {(generation.pending || generation.status || generation.error) && <div className="generation-status" role="status">
+        <span>{generation.status}</span>
+        {generation.error && <span className="api-error">{generation.error}</span>}
+        {generation.job?.state === 'SUCCEEDED' && <button type="button" onClick={() => { void openGeneratedProject().catch(error => setSaveError(String(error))) }}>打开生成图纸</button>}
+        {generation.pending && generation.job?.state !== 'SUCCEEDED' && <button type="button" disabled={generation.uploading || generation.job?.state === 'CANCEL_REQUESTED'} onClick={() => { void generation.cancel() }}>取消生成</button>}
+        {generation.pending && generation.error && <button type="button" onClick={generation.retry}>继续查询</button>}
+        {!generation.pending && <button type="button" onClick={generation.acknowledge}>关闭提示</button>}
+      </div>}
+      {saveError && <p className="draft-status api-error" role="alert">{saveError}</p>}
+      {draftConflict && !libraryOpen && <div className="draft-conflict" role="alert">
+        <span>服务器已有新版本，本地草稿已保留。</span>
+        <button type="button" disabled={saveState === 'loading'} onClick={saveDraftCopy}>另存为新图纸</button>
+        <button type="button" disabled={saveState === 'loading'} onClick={() => { void loadServerVersion().catch(error => setSaveError(String(error))) }}>载入服务器版本</button>
+      </div>}
+      </div>
       {libraryOpen ? <ProjectLibrary onOpen={openLibraryProject} onBusy={setLibraryBusy}
         onRemoved={(id) => {
           if (session?.projectId === id) {
@@ -409,19 +551,22 @@ function App() {
           }
         }} /> : <section className="workspace-grid">
         <aside className="tool-rail" aria-label="绘图工具">
-          {mode === 'view' ? <div className="view-help"><strong>看图</strong><p>点击针格查线色</p><p>拖动平移<br />滚轮缩放</p></div> : TOOLS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={tool === item.id ? 'tool-button active' : 'tool-button'}
-              onClick={() => setTool(item.id)}
-              aria-pressed={tool === item.id}
-            >
-              <span>{item.label}</span>
-              <kbd>{item.shortcut}</kbd>
-            </button>
-          ))}
-
+          {mode === 'view' ? <div className="view-help"><strong>看图</strong><p>点击针格查线色</p><p>拖动平移<br />双指缩放</p></div> : TOOLS.map((item) => {
+            const ToolIcon = TOOL_ICONS[item.id]
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={tool === item.id ? 'tool-button active' : 'tool-button'}
+                onClick={() => setTool(item.id)}
+                aria-pressed={tool === item.id}
+              >
+                <ToolIcon className="tool-btn-icon" aria-hidden="true" />
+                <span>{item.label}</span>
+                <kbd>{item.shortcut}</kbd>
+              </button>
+            )
+          })}
         </aside>
 
         <section className="canvas-stage" aria-label="图纸编辑区">
@@ -513,15 +658,15 @@ function App() {
             </section>
           </div>
           <div className="status-bar">
-            <span>{hoveredCell ? `列 ${hoveredCell.col + 1}，行 ${hoveredCell.row + 1}` : '移动指针查看坐标'}</span>
-            <span>{mode === 'view' ? '点击查线色 · 拖动平移 · 滚轮缩放' : '滚轮缩放 · 按住空格拖动 · 中键平移'}{showSymbols ? ' · 放大查看符号' : ''}</span>
+            <span>{hoveredCell ? `列 ${hoveredCell.col + 1}，行 ${hoveredCell.row + 1}` : '点击或移动到针格查看坐标'}</span>
+            {projectDraft.status ? <span role="status">{projectDraft.status}</span> : <span>{mode === 'view' ? '点击查线色 · 拖动平移 · 滚轮缩放' : '滚轮缩放 · 按住空格拖动 · 中键平移'}{showSymbols ? ' · 放大查看符号' : ''}</span>}
           </div>
         </section>
 
         <aside className="inspector">
           <section className="inspector-section current-cell-panel" aria-label="实时针格信息">
             <div className="section-heading"><h2>针格信息</h2><span>{mode === 'view' ? '查看' : '编辑'}</span></div>
-            <div className="live-cell-position">{hoveredCell ? `列 ${hoveredCell.col + 1} · 行 ${hoveredCell.row + 1}` : '移动鼠标到图纸上'}</div>
+            <div className="live-cell-position">{hoveredCell ? `列 ${hoveredCell.col + 1} · 行 ${hoveredCell.row + 1}` : '点击针格查看线色'}</div>
             <p>{hoveredRecipeIndex === null ? '坐标与线色会实时显示在这里' : hoveredRecipeIndex === 0 ? '空白针格' : `${hoveredMaterial?.brand ?? 'DMC'} ${hoveredMaterial?.code ?? '未知'} · ${hoveredMaterial?.name ?? ''}`}</p>
             {selection && <span className="selection-count">已选 {(selection.endCol - selection.startCol + 1) * (selection.endRow - selection.startRow + 1)} 格</span>}
           </section>
@@ -563,7 +708,7 @@ function App() {
           </section>
 
           {mode === 'edit' && <section className="inspector-section history-panel">
-            <div className="section-heading"><h2>操作记录</h2><span>本次会话 · 最近 100 步</span></div>
+            <div className="section-heading"><h2>操作记录</h2><span>最近 100 步 · 未保存草稿可恢复</span></div>
             {!editor.past.length && <p>暂无编辑操作</p>}
             <ol>{editor.past.slice(-8).reverse().map((edit, index) => (
               <li key={editor.past.length - index}>{edit.label}<span>{edit.changes.length} 格</span></li>
@@ -573,9 +718,20 @@ function App() {
           </section>}
 
           {importNotice && <section className="inspector-section"><h2>导入说明</h2><p className="import-explanation">{importNotice}</p></section>}
+          {rareColorSummary?.version === 1 && <section className="inspector-section">
+            <div className="section-heading"><h2>线色精简</h2><span>生成时 {rareColorSummary.colors_before} → {rareColorSummary.colors_after} 色</span></div>
+            <p className="import-explanation">{rareColorSummary.changed_stitches > 0
+              ? `生成时合并了 ${rareColorSummary.colors_before - rareColorSummary.colors_after} 种近似线色，调整 ${rareColorSummary.changed_stitches} 针。`
+              : '未找到适合自动合并的少量线色，保留原配色。'}</p>
+            {rareColorSummary.retained_colors > 0 && <p className="import-explanation">另有 {rareColorSummary.retained_colors} 种少量线色未满足合并条件，已保留。</p>}
+          </section>}
           {planningReport && <section className="inspector-section">
-            <div className="section-heading"><h2>自动方案</h2><span>{planningReport.provider === 'codex' ? 'Codex 分析' : '本地分析'}</span></div>
+            <div className="section-heading"><h2>自动方案</h2><span>{planningReport.method === 'counted_stitches' ? '按原图针脚还原' : planningReport.provider === 'deepseek' ? 'DeepSeek 分析' : planningReport.provider === 'codex' ? 'Codex 分析' : '本地分析'}</span></div>
             <p className="import-explanation">{planningReport.plan.explanation}</p>
+            {planningReport.structure_review && <p className="import-explanation">
+              <strong>{planningReport.structure_review.status === 'passed' ? '原图结构复核通过' : '本地结构检查通过'}</strong>
+              <br />{planningReport.structure_review.summary}
+            </p>}
             {planningReport.fallback_reason && <p className="import-explanation">{planningReport.fallback_reason}</p>}
           </section>}
           <section className="inspector-section quality-panel">
@@ -620,7 +776,7 @@ function App() {
             <div className="import-heading">
               <div>
                 <h2 id="import-title">{importKind === 'oxs' ? '导入 OXS 图纸' : '从图片自动生成图纸'}</h2>
-                <p>{importKind === 'oxs' ? '读取图纸中的针格、线色、CT 和股数，导入后直接查看。当前支持全针图纸。' : '选择图片即可。系统自动分析针格、尺寸、线色和股数，并生成图纸。'}</p>
+                <p>{importKind === 'oxs' ? '读取图纸中的针格、线色、CT 和股数，导入后直接查看。当前支持全针图纸。' : '选择图片即可。独立图案默认背景留白，自动收紧空白边距；简单图案使用更少的针格和线色。'}</p>
               </div>
               <button
                 type="button"
@@ -632,26 +788,34 @@ function App() {
               </button>
             </div>
             <form onSubmit={importImage}>
+              <p className="billing-notice">{importKind === 'oxs' ? '免费导入 · 查看与编辑不扣次数' : `本次消耗 1 次 · 当前剩余 ${user.credits} 次`}</p>
+              {importKind === 'image' && user.credits < 1 && <button type="button" className="quiet-button" onClick={() => { setImportOpen(false); setAccountOpen(true) }}>查看充值与次数</button>}
               <label className="file-field">
                 <span>{importKind === 'oxs' ? 'OXS 文件' : '效果原图'}</span>
                 <input name="image" type="file" accept={importKind === 'oxs' ? '.oxs' : 'image/png,image/jpeg'} required disabled={importState === 'loading'} />
                 <small>{importKind === 'oxs' ? 'OXS，最大 16 MiB' : 'JPG 或 PNG，最大 20 MiB'}</small>
               </label>
-              {importKind === 'image' && <p className="import-explanation">优先使用本机 Codex 分析；不可用时自动采用本地方案。生成后可在右侧查看参数与选择依据。</p>}
+              {importKind === 'image' && <p className="import-explanation">生成成功并保存后扣 1 次，失败不扣次数。生成后可查看方案参数。</p>}
               {importState === 'loading' && <p role="status">{importKind === 'oxs' ? '正在读取图纸…' : '正在分析图片并生成图纸，请稍候…'}</p>}
               {importError && <p className="import-error">{importError}</p>}
               <div className="import-actions">
                 <button type="button" disabled={importState === 'loading'} onClick={() => setImportOpen(false)}>
                   取消
                 </button>
-                <button className="primary-button" type="submit" disabled={importState === 'loading'}>
-                  {importState === 'loading' ? '正在处理…' : importKind === 'oxs' ? '导入图纸' : '自动生成图纸'}
+                <button className="primary-button" type="submit" disabled={importState === 'loading' || (importKind === 'image' && user.credits < 1)}>
+                  {importState === 'loading' ? '正在处理…' : importKind === 'oxs' ? '免费导入图纸' : '生成图纸 · 1 次'}
                 </button>
               </div>
             </form>
           </section>
         </div>
       )}
+      {downloadOpen && <DownloadPanel title={document.metadata.title} dirty={dirty}
+        onPrepare={prepareDownload} onClose={() => setDownloadOpen(false)} />}
+      {accountOpen && <AccountPanel user={user} onClose={() => setAccountOpen(false)} onRefresh={onAccountRefresh} onLogout={async () => {
+        if (dirty && !window.confirm('图纸有未保存修改，确定退出登录？')) return
+        await onLogout()
+      }} />}
     </main>
   )
 }

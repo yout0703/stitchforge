@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlencode
 
+from conftest import AccountClient
 from fastapi.testclient import TestClient
 from PIL import Image
 from stitchforge_api import create_app
@@ -21,7 +22,7 @@ def _create_project(client: TestClient, *, name: str = "测试图纸") -> dict:
 
 
 def test_project_creation_starts_with_valid_empty_revision(tmp_path: Path) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         assert client.get("/api/v1/health").json() == {"status": "ok"}
         created = _create_project(client)
         project = created["project"]
@@ -42,7 +43,7 @@ def test_project_creation_starts_with_valid_empty_revision(tmp_path: Path) -> No
 
 
 def test_revision_update_and_stale_head_return_structured_error(tmp_path: Path) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = _create_project(client)
         project_id = created["project"]["project_id"]
         first = created["initial_revision"]
@@ -73,7 +74,7 @@ def test_revision_update_and_stale_head_return_structured_error(tmp_path: Path) 
 
 
 def test_invalid_document_and_request_have_stable_error_shape(tmp_path: Path) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = _create_project(client)
         project_id = created["project"]["project_id"]
         revision_id = created["initial_revision"]["revision_id"]
@@ -102,7 +103,7 @@ def test_invalid_document_and_request_have_stable_error_shape(tmp_path: Path) ->
 
 
 def test_job_polling_cancellation_and_project_deletion(tmp_path: Path) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = _create_project(client)
         project_id = created["project"]["project_id"]
         revision_id = created["initial_revision"]["revision_id"]
@@ -133,7 +134,7 @@ def test_job_polling_cancellation_and_project_deletion(tmp_path: Path) -> None:
 def test_command_is_idempotent_and_locked_cells_are_rejected(
     tmp_path: Path, minimal_document: dict
 ) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         created = _create_project(client)
         project_id = created["project"]["project_id"]
         initial_id = created["initial_revision"]["revision_id"]
@@ -191,7 +192,7 @@ def test_command_is_idempotent_and_locked_cells_are_rejected(
 def test_cross_site_writes_are_rejected_and_missing_resources_are_404(
     tmp_path: Path,
 ) -> None:
-    with TestClient(create_app(tmp_path / "data")) as client:
+    with AccountClient(create_app(tmp_path / "data")) as client:
         forbidden = client.post(
             "/api/v1/projects",
             json={"name": "blocked"},
@@ -204,9 +205,9 @@ def test_cross_site_writes_are_rejected_and_missing_resources_are_404(
 
 def test_workspace_and_projects_survive_application_restart(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
-    with TestClient(create_app(data_dir)) as first_client:
+    with AccountClient(create_app(data_dir)) as first_client:
         project_id = _create_project(first_client)["project"]["project_id"]
-    with TestClient(create_app(data_dir)) as second_client:
+    with AccountClient(create_app(data_dir)) as second_client:
         response = second_client.get(f"/api/v1/projects/{project_id}")
         assert response.status_code == 200
         assert response.json()["project_id"] == project_id
@@ -222,7 +223,7 @@ def test_image_conversion_creates_revision_and_serves_source_asset(tmp_path: Pat
     payload = source.read_bytes()
     catalog = ROOT / "catalogs/dmc-117-2021-quiltysolid-2025-07.json"
 
-    with TestClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
+    with AccountClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
         created = _create_project(client, name="图片转换")
         project_id = created["project"]["project_id"]
         revision_id = created["initial_revision"]["revision_id"]
@@ -281,7 +282,7 @@ def test_image_conversion_supports_rendered_stitch_recovery_and_greedy_palette(
     Image.new("RGB", (4, 4), "#E0D8CC").save(source)
     catalog = ROOT / "catalogs/dmc-117-2021-quiltysolid-2025-07.json"
 
-    with TestClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
+    with AccountClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
         created = _create_project(client, name="效果图恢复")
         project_id = created["project"]["project_id"]
         query = urlencode(
@@ -311,7 +312,7 @@ def test_image_conversion_supports_rendered_stitch_recovery_and_greedy_palette(
 
 def test_image_conversion_rejects_invalid_image_and_stale_revision(tmp_path: Path) -> None:
     catalog = ROOT / "catalogs/dmc-117-2021-quiltysolid-2025-07.json"
-    with TestClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
+    with AccountClient(create_app(tmp_path / "data", catalog_path=catalog)) as client:
         created = _create_project(client)
         project_id = created["project"]["project_id"]
         revision_id = created["initial_revision"]["revision_id"]

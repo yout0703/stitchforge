@@ -18,6 +18,8 @@ from urllib.request import urlopen
 
 from defusedxml import ElementTree
 from playwright.sync_api import expect, sync_playwright
+from stitchforge_storage import SQLiteStore
+from stitchforge_storage.accounts import AccountStore
 
 ROOT = Path(__file__).resolve().parents[1]
 source = Path(sys.argv[1]).resolve()
@@ -60,6 +62,20 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
             captured = {}
             page.on("pageerror", lambda error: errors.append(str(error)))
 
+            registration = page.request.post(
+                f"http://127.0.0.1:{port}/api/v1/auth/register",
+                data={"email": "browser@example.com", "password": "browser-test-password"},
+                headers={"X-StitchForge-Request": "1"},
+            )
+            assert registration.status == 201
+            accounts = AccountStore(SQLiteStore(work / "data" / "metadata.sqlite3"))
+            order = accounts.create_order(
+                registration.json()["user_id"],
+                {"id": "test", "credits": 20, "amount_minor": 100, "currency": "CNY"},
+                "seed",
+            )
+            accounts.settle_order(order["order_id"], "test-payment", 100, "CNY")
+
             def api(route):
                 path = urlsplit(route.request.url)
                 response = route.fetch(
@@ -72,10 +88,10 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-import-e2e-") as name:
 
             page.route("**/api/v1/**", api)
             page.goto("http://127.0.0.1:5173/#library")
-            page.get_by_role("button", name="导入 OXS", exact=True).click()
+            page.get_by_role("button", name="OXS 免费导入", exact=True).click()
             page.get_by_role("dialog").locator("input[type=file]").set_input_files(source)
             with page.expect_response("**/api/v1/projects/import-oxs") as response:
-                page.get_by_role("button", name="导入图纸", exact=True).click()
+                page.get_by_role("button", name="免费导入图纸", exact=True).click()
             assert response.value.status == 201
             imported = captured["/api/v1/projects/import-oxs"]
             document = imported["initial_revision"]["document"]

@@ -1,29 +1,56 @@
 import type { PatternDocument } from './types'
 
-interface CellChange { index: number; before: number; after: number }
+export interface CellChange { index: number; before: number; after: number }
 export interface Edit { label: string; changes: CellChange[] }
 export interface EditorState {
   document: PatternDocument
   savedDocument: PatternDocument
   past: Edit[]
   future: Edit[]
+  dirtyCount: number
+  recipeCounts: Map<number, number>
+  lockedIndices: Set<number>
   active: { label: string; changes: Map<number, CellChange> } | null
 }
 export type EditorAction =
   | { type: 'reset'; document: PatternDocument }
+  | { type: 'restore'; state: EditorState }
   | { type: 'saved'; document: PatternDocument }
   | { type: 'begin'; label: string }
   | { type: 'paint'; indices: readonly number[]; recipe: number; label: string }
   | { type: 'end' | 'undo' | 'redo' }
 
-export function createEditor(document: PatternDocument): EditorState {
-  return { document, savedDocument: document, past: [], future: [], active: null }
+function countDirty(document: PatternDocument, saved: PatternDocument): number {
+  const cells = document.full_stitches.cells
+  const before = saved.full_stitches.cells
+  let count = Math.abs(cells.length - before.length)
+  for (let index = 0; index < Math.min(cells.length, before.length); index++) {
+    if (cells[index] !== before[index]) count++
+  }
+  return count
+}
+
+export function createEditor(document: PatternDocument, savedDocument = document): EditorState {
+  const recipeCounts = new Map<number, number>()
+  for (const recipe of document.full_stitches.cells) {
+    if (recipe > 0) recipeCounts.set(recipe, (recipeCounts.get(recipe) ?? 0) + 1)
+  }
+  const lockedIndices = new Set<number>()
+  for (const region of document.regions ?? []) {
+    if (region.policy !== 'locked') continue
+    for (const span of region.spans) {
+      for (let col = span.start_col; col < span.end_col; col++) {
+        lockedIndices.add(span.row * document.grid.width + col)
+      }
+    }
+  }
+  return { document, savedDocument, recipeCounts, lockedIndices,
+    dirtyCount: document === savedDocument ? 0 : countDirty(document, savedDocument),
+    past: [], future: [], active: null }
 }
 
 export function isDirty(state: EditorState): boolean {
-  const cells = state.document.full_stitches.cells
-  const saved = state.savedDocument.full_stitches.cells
-  return cells.length !== saved.length || cells.some((value, index) => value !== saved[index])
+  return state.dirtyCount > 0
 }
 
 function finish(state: EditorState): EditorState {
@@ -37,50 +64,64 @@ function finish(state: EditorState): EditorState {
   }
 }
 
-function applyChanges(document: PatternDocument, changes: CellChange[], direction: 'before' | 'after') {
-  const cells = document.full_stitches.cells.slice()
-  for (const change of changes) cells[change.index] = change[direction]
-  return { ...document, full_stitches: { ...document.full_stitches, cells } }
+function applyChanges(state: EditorState, changes: CellChange[], direction: 'before' | 'after') {
+  const cells = state.document.full_stitches.cells.slice()
+  const recipeCounts = new Map(state.recipeCounts)
+  let dirtyCount = state.dirtyCount
+  for (const change of changes) {
+    const before = cells[change.index]
+    const after = change[direction]
+    if (before === after) continue
+    const saved = state.savedDocument.full_stitches.cells[change.index]
+    dirtyCount += Number(after !== saved) - Number(before !== saved)
+    if (before > 0) {
+      const remaining = (recipeCounts.get(before) ?? 0) - 1
+      if (remaining) recipeCounts.set(before, remaining)
+      else recipeCounts.delete(before)
+    }
+    if (after > 0) recipeCounts.set(after, (recipeCounts.get(after) ?? 0) + 1)
+    cells[change.index] = after
+  }
+  return { ...state, dirtyCount, recipeCounts,
+    document: { ...state.document, full_stitches: { ...state.document.full_stitches, cells } } }
 }
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
   switch (action.type) {
     case 'reset': return createEditor(action.document)
+    case 'restore': return action.state
     // Save the exact submitted snapshot; edits made while the request runs remain dirty.
-    case 'saved': return { ...state, savedDocument: action.document }
+    case 'saved': return { ...state, savedDocument: action.document, dirtyCount: countDirty(state.document, action.document) }
     case 'begin': return { ...finish(state), active: { label: action.label, changes: new Map() } }
     case 'end': return finish(state)
     case 'paint': {
+      if (action.recipe !== 0 && !state.document.recipes.some((recipe) => recipe.index === action.recipe)) return state
       const active = state.active ?? { label: action.label, changes: new Map<number, CellChange>() }
       const changes = new Map(active.changes)
-      const cells = state.document.full_stitches.cells.slice()
-      let changed = false
-      for (const index of action.indices) {
-        if (!Number.isInteger(index) || index < 0 || index >= cells.length || cells[index] === action.recipe) continue
-        changes.set(index, { index, before: changes.get(index)?.before ?? cells[index], after: action.recipe })
-        cells[index] = action.recipe
-        changed = true
+      const cells = state.document.full_stitches.cells
+      const updates: CellChange[] = []
+      for (const index of new Set(action.indices)) {
+        if (!Number.isInteger(index) || index < 0 || index >= cells.length || state.lockedIndices.has(index) || cells[index] === action.recipe) continue
+        const update = { index, before: cells[index], after: action.recipe }
+        updates.push(update)
+        changes.set(index, { ...update, before: changes.get(index)?.before ?? cells[index] })
       }
-      if (!changed) return state
-      const next = {
-        ...state,
-        document: { ...state.document, full_stitches: { ...state.document.full_stitches, cells } },
-        active: { label: active.label, changes },
-      }
+      if (!updates.length) return state
+      const next = { ...applyChanges(state, updates, 'after'), active: { label: active.label, changes } }
       return state.active ? next : finish(next)
     }
     case 'undo': {
       const current = finish(state)
       const edit = current.past.at(-1)
       if (!edit) return current
-      return { ...current, document: applyChanges(current.document, edit.changes, 'before'),
+      return { ...applyChanges(current, edit.changes, 'before'),
         past: current.past.slice(0, -1), future: [...current.future, edit] }
     }
     case 'redo': {
       const current = finish(state)
       const edit = current.future.at(-1)
       if (!edit) return current
-      return { ...current, document: applyChanges(current.document, edit.changes, 'after'),
+      return { ...applyChanges(current, edit.changes, 'after'),
         past: [...current.past, edit], future: current.future.slice(0, -1) }
     }
   }

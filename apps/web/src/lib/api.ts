@@ -1,3 +1,4 @@
+import { apiFetch } from './account'
 import type {
   ImageConversionResponse,
   PatternDocument,
@@ -21,11 +22,20 @@ export class ApiError extends Error {
   }
 }
 
+export async function downloadChart(projectId: string, revisionId: string, format: 'oxs' | 'png'): Promise<Blob> {
+  const response = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/download/${format}`)
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({})) as { code?: string; message?: string }
+    throw new ApiError(error.code ?? 'EXPORT_FAILED', error.message ?? '下载失败，请稍后重试')
+  }
+  return response.blob()
+}
+
 export async function createProject(name: string): Promise<ProjectCreationResponse> {
-  const response = await fetch('/api/v1/projects', {
+  const response = await apiFetch('/api/v1/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, fabric_count: 14, fabric_color: '#DDD5C5' }),
+    body: JSON.stringify({ name, fabric_count: 14, fabric_color: '#FFFFFF' }),
   })
   const body: unknown = await response.json()
   if (!response.ok) {
@@ -44,7 +54,7 @@ export async function createRevision(
   expectedHeadRevisionId: string,
   document: PatternDocument,
 ): Promise<{ revision_id: string }> {
-  const response = await fetch(`/api/v1/projects/${projectId}/revisions`, {
+  const response = await apiFetch(`/api/v1/projects/${projectId}/revisions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -65,7 +75,7 @@ export async function createRevision(
 }
 
 export async function getProject(projectId: string): Promise<ProjectRecord> {
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}`)
+  const response = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}`)
   const body: unknown = await response.json()
   if (!response.ok) {
     const error = body as { code?: string; message?: string; request_id?: string }
@@ -82,7 +92,7 @@ export async function getRevision(
   projectId: string,
   revisionId: string,
 ): Promise<RevisionRecord> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/v1/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}`,
   )
   const body: unknown = await response.json()
@@ -137,7 +147,7 @@ export async function convertProjectImage(
   file: File,
   options: ImageConversionOptions | { expectedHeadRevisionId: string; automatic: true },
 ): Promise<ImageConversionResponse> {
-  const response = await fetch(buildImageConversionUrl(projectId, options), {
+  const response = await apiFetch(buildImageConversionUrl(projectId, options), {
     method: 'POST',
     headers: { 'Content-Type': file.type || 'application/octet-stream' },
     body: file,
@@ -157,7 +167,7 @@ export async function convertProjectImage(
 export async function importOxsProject(file: File): Promise<ProjectCreationResponse & {
   report: { issues: { severity: string; message: string }[] }
 }> {
-  const response = await fetch('/api/v1/projects/import-oxs', {
+  const response = await apiFetch('/api/v1/projects/import-oxs', {
     method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
   })
   const body = await response.json()
@@ -166,7 +176,7 @@ export async function importOxsProject(file: File): Promise<ProjectCreationRespo
 }
 
 async function libraryRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1/projects${path}`, options)
+  const response = await apiFetch(`/api/v1/projects${path}`, options)
   const body = await response.json()
   if (!response.ok) throw new ApiError(body.code ?? 'API_ERROR', body.message ?? '图纸库请求失败', body.request_id)
   return body as T
@@ -190,4 +200,35 @@ export function deleteProject(projectId: string) {
 
 export function restoreProject(projectId: string) {
   return libraryRequest(`/${encodeURIComponent(projectId)}/restore`, { method: 'POST' })
+}
+
+export interface GenerationJob {
+  job_id: string
+  project_id: string
+  state: 'QUEUED' | 'RUNNING' | 'CANCEL_REQUESTED' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED'
+  stage: string
+  result: ImageConversionResponse | null
+  error: { code?: string; message?: string } | null
+}
+
+async function generationRequest(path: string, init?: RequestInit): Promise<GenerationJob> {
+  const response = await apiFetch(path, init)
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new ApiError(body.code ?? 'GENERATION_ERROR', body.message ?? '生成任务请求失败，请重试', body.request_id)
+  return body as GenerationJob
+}
+
+export function enqueueProjectImage(projectId: string, headRevisionId: string, requestKey: string, file: File) {
+  const query = new URLSearchParams({ expected_head_revision_id: headRevisionId, request_key: requestKey })
+  return generationRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/image-jobs?${query}`, {
+    method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+  })
+}
+
+export function recoverGeneration(requestKey: string) {
+  return generationRequest(`/api/v1/generation-requests/${encodeURIComponent(requestKey)}`)
+}
+
+export function cancelGeneration(jobId: string) {
+  return generationRequest(`/api/v1/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })
 }

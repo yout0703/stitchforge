@@ -28,6 +28,8 @@ export interface PatternDocument {
   fabric: { count: number; display_srgb: string }
   materials: Material[]
   recipes: Recipe[]
+  regions?: { id: string; name?: string; policy: 'locked' | 'preserve' | 'normal';
+    spans: { row: number; start_col: number; end_col: number }[] }[]
   extensions?: Record<string, unknown>
   legend?: { recipe_id: string; symbol_id: string }[]
   full_stitches: { cells: number[]; top_leg: 'slash' | 'backslash' }
@@ -50,9 +52,20 @@ export interface RevisionRecord {
   document: PatternDocument
 }
 
+export interface RareColorSummary {
+  version: 1
+  colors_before: number
+  colors_after: number
+  changed_stitches: number
+  retained_colors: number
+}
+
 export interface ImageConversionResponse {
   planning_report?: {
-    provider: 'codex' | 'local'
+    provider: 'codex' | 'deepseek' | 'local'
+    method?: 'counted_stitches'
+    structure_review?: { status: 'passed' | 'unavailable'; summary: string } | null
+    model?: string
     fallback_reason: string | null
     plan: { grid_width: number; grid_height: number; fabric_count: number; strands: number; color_budget: number; explanation: string }
   } | null

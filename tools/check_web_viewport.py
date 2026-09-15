@@ -35,7 +35,7 @@ with sync_playwright() as runner:
         lambda message: failures.append(message.text) if message.type == "error" else None,
     )
     page.add_init_script("""
-        localStorage.setItem('stitchforge.lastProjectId', 'viewport-test');
+        localStorage.setItem('stitchforge.lastProjectId.test-user', 'viewport-test');
         const original = CanvasRenderingContext2D.prototype.translate;
         window.canvasTranslations = new WeakMap();
         CanvasRenderingContext2D.prototype.translate = function(x, y) {
@@ -45,6 +45,9 @@ with sync_playwright() as runner:
     """)
 
     def api(route):
+        if "/auth/me" in route.request.url:
+            route.fulfill(json={"user_id": "test-user", "email": "test@example.com", "credits": 10})
+            return
         path = route.request.url
         if "/assets/" in path:
             route.fulfill(

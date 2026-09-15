@@ -1,10 +1,92 @@
 :root {
-  font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  color: #1c2430;
-  background: #dfe3e8;
+  /* StitchForge Design Tokens - Color Palette */
+  --sf-accent-50: #eff5ff;
+  --sf-accent-100: #dbe7fe;
+  --sf-accent-200: #bfd5fe;
+  --sf-accent-300: #93bbfd;
+  --sf-accent-500: #2c62f6;
+  --sf-accent-600: #1d4fd7;
+  --sf-accent-700: #143cb8;
+  --sf-accent-glow: rgba(44, 98, 246, 0.22);
+
+  --sf-ink-950: #0b0f17;
+  --sf-ink-900: #111827;
+  --sf-ink-800: #1f2937;
+  --sf-ink-700: #374151;
+  --sf-ink-600: #4b5563;
+  --sf-ink-500: #6b7280;
+  --sf-ink-400: #9ca3af;
+  --sf-ink-300: #d1d5db;
+  --sf-ink-200: #e5e7eb;
+  --sf-ink-100: #f3f4f6;
+
+  /* Surfaces & Canvas */
+  --sf-bg-canvas: #e6e9ee;
+  --sf-bg-canvas-subtle: #edf0f5;
+  --sf-bg-panel: #ffffff;
+  --sf-bg-panel-subtle: #f9fafb;
+  --sf-bg-muted: #f3f4f6;
+  --sf-bg-elevated: #ffffff;
+  --sf-bg-glass: rgba(255, 255, 255, 0.88);
+
+  /* Lines & Borders */
+  --sf-border-subtle: #e5e7eb;
+  --sf-border: #d1d5db;
+  --sf-border-strong: #9ca3af;
+
+  /* Status Colors */
+  --sf-success: #10b981;
+  --sf-success-bg: #ecfdf5;
+  --sf-success-border: #a7f3d0;
+  --sf-warning: #f59e0b;
+  --sf-warning-bg: #fffbeb;
+  --sf-warning-border: #fde68a;
+  --sf-danger: #ef4444;
+  --sf-danger-bg: #fef2f2;
+  --sf-danger-border: #fecaca;
+  --sf-info: #0284c7;
+  --sf-info-bg: #f0f9ff;
+  --sf-info-border: #bae6fd;
+
+  /* Elevation Shadows */
+  --sf-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --sf-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --sf-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --sf-shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
+  --sf-shadow-xl: 0 20px 48px -8px rgba(15, 23, 42, 0.22), 0 8px 16px -4px rgba(15, 23, 42, 0.08);
+
+  /* Radii */
+  --sf-radius-xs: 4px;
+  --sf-radius-sm: 6px;
+  --sf-radius-md: 9px;
+  --sf-radius-lg: 14px;
+  --sf-radius-xl: 20px;
+  --sf-radius-full: 9999px;
+
+  /* Transitions */
+  --sf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --sf-transition-fast: 150ms var(--sf-ease);
+  --sf-transition-base: 220ms var(--sf-ease);
+
+  /* Legacy aliases for backward compatibility */
+  --accent: var(--sf-accent-500);
+  --accent-strong: var(--sf-accent-600);
+  --ink: var(--sf-ink-900);
+  --muted: var(--sf-ink-500);
+  --line: var(--sf-border);
+  --panel: var(--sf-bg-panel-subtle);
+  --panel-strong: var(--sf-bg-panel);
+  --radius: var(--sf-radius-md);
+
+  /* Typography */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+  color: var(--sf-ink-900);
+  background-color: var(--sf-bg-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -22,19 +104,56 @@ body,
 body {
   min-height: 100dvh;
   overflow: hidden;
+  background-color: var(--sf-bg-canvas);
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
 button {
   color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 button:focus-visible,
+input:focus-visible,
+select:focus-visible,
 canvas:focus-visible {
-  outline: 2px solid #235ccf;
+  outline: 2px solid var(--sf-accent-500);
   outline-offset: 2px;
+}
+
+/* Tabular figures for numbers, coordinates, stitch counts */
+.canvas-meta,
+.live-cell-position,
+.status-bar,
+.inspector dd,
+.strand-count,
+.credit-balance strong,
+.credit-history strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Elegant scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
 }

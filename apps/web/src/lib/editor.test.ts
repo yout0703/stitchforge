@@ -90,3 +90,41 @@ describe('connected fill', () => {
     expect(floodIndices([1, 2, 2, 1], 2, 0)).toEqual([0])
   })
 })
+
+it('protects locked cells and rejects unknown recipes during paint and fill', () => {
+  const document = initial().document
+  document.regions = [{ id: 'lock', policy: 'locked', spans: [{ row: 0, start_col: 0, end_col: 1 }] }]
+  let state = createEditor(document)
+  state = editorReducer(state, { type: 'paint', indices: [0, 1], recipe: 2, label: '填充' })
+  expect(state.document.full_stitches.cells.slice(0, 2)).toEqual([1, 2])
+  const previous = state
+  state = editorReducer(state, { type: 'paint', indices: [1], recipe: 999, label: '无效' })
+  expect(state).toBe(previous)
+})
+
+it('updates counts on overlapping strokes, undo and redo without changing earlier snapshots', () => {
+  const original = initial()
+  let state = editorReducer(original, { type: 'begin', label: '画笔' })
+  state = editorReducer(state, { type: 'paint', indices: [0, 1], recipe: 2, label: '画笔' })
+  state = editorReducer(state, { type: 'paint', indices: [1, 2], recipe: 0, label: '画笔' })
+  state = editorReducer(state, { type: 'end' })
+  expect(state.recipeCounts.get(1)).toBe(9)
+  expect(state.recipeCounts.get(2)).toBe(1)
+  expect(original.recipeCounts.get(1)).toBe(12)
+  state = editorReducer(state, { type: 'undo' })
+  expect(state.recipeCounts.get(1)).toBe(12)
+  state = editorReducer(state, { type: 'redo' })
+  expect(state.recipeCounts.get(1)).toBe(9)
+})
+
+it('checks dirty state without scanning the whole grid on hover renders', () => {
+  const state = initial()
+  const cells = state.document.full_stitches.cells
+  state.document.full_stitches.cells = new Proxy(cells, {
+    get(target, key, receiver) {
+      if (key === 'some' || /^\d+$/.test(String(key))) throw new Error('unexpected full-grid scan')
+      return Reflect.get(target, key, receiver)
+    },
+  })
+  expect(isDirty(state)).toBe(false)
+})

@@ -5,6 +5,7 @@ Requires frontend at http://127.0.0.1:5173; all API requests are mocked.
 """
 
 import json
+import os
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -22,9 +23,14 @@ with sync_playwright() as runner:
     errors = []
     saved = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    page.add_init_script("localStorage.setItem('stitchforge.lastProjectId', 'editing-test')")
+    page.add_init_script(
+        "localStorage.setItem('stitchforge.lastProjectId.test-user', 'editing-test')"
+    )
 
     def api(route):
+        if "/auth/me" in route.request.url:
+            route.fulfill(json={"user_id": "test-user", "email": "test@example.com", "credits": 10})
+            return
         if "/assets/" in route.request.url:
             route.fulfill(
                 content_type="image/svg+xml",
@@ -40,7 +46,7 @@ with sync_playwright() as runner:
             route.fulfill(json={"project_id": "editing-test", "head_revision_id": "r-test"})
 
     page.route("**/api/v1/**", api)
-    page.goto("http://127.0.0.1:5173")
+    page.goto(os.environ.get("STITCHFORGE_WEB_URL", "http://127.0.0.1:5173"))
     page.get_by_text("20 × 20 格", exact=True).wait_for()
     canvas = page.locator("canvas")
     page.wait_for_timeout(100)
@@ -78,10 +84,16 @@ with sync_playwright() as runner:
     assert pixels() == before
     print("PASS: default viewer is read-only; cell/palette highlighting and counts work")
 
-    page.get_by_role("button", name="符号显示", exact=True).click()
+    expect(page.get_by_role("button", name="符号显示", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
     expect(page.locator('[data-recipe-index="1"] .recipe-symbol')).to_have_text("A")
+    assert pixels() == before
+    page.get_by_role("button", name="符号显示", exact=True).click()
+    expect(page.locator('[data-recipe-index="1"] .recipe-symbol')).to_have_count(0)
     assert pixels() != before
     page.get_by_role("button", name="符号显示", exact=True).click()
+    assert pixels() == before
     page.get_by_role("button", name="网格", exact=True).click()
     assert pixels() != before
     page.get_by_role("button", name="网格", exact=True).click()

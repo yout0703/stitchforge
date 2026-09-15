@@ -13,7 +13,11 @@ from stitchforge.imaging import (
     sample_normalized_image,
 )
 from stitchforge.recovery import recover_rendered_stitch_colors
-from stitchforge.segmentation import remove_connected_border_background
+from stitchforge.segmentation import (
+    remove_connected_border_background,
+    sample_fabric_foreground,
+    trim_blank_margins,
+)
 
 
 def test_normalize_png_preserves_alpha_and_records_missing_icc(tmp_path: Path) -> None:
@@ -242,6 +246,67 @@ def test_border_background_removal_keeps_different_subject_touching_border() -> 
 
     assert report.removed_cells == 11
     assert cleaned.display_srgb[4] == "#C81414"
+
+
+def test_textured_cloth_dots_removed_but_enclosed_pale_details_preserved():
+    image = Image.new("RGB", (30, 30), "#E4E0D6")
+    for y in range(30):
+        for x in range(30):
+            if (x + y) % 4 == 0:
+                image.putpixel((x, y), (239, 237, 232))
+    for y in range(12, 18):
+        for x in range(12, 18):
+            image.putpixel((x, y), (190, 20, 30))
+    image.putpixel((14, 14), (239, 237, 232))
+    image.putpixel((15, 14), (255, 190, 200))
+    sample = sample_grid(image, width=30, height=30)
+    cleaned, report = remove_connected_border_background(sample, textured_fabric=True)
+    assert report.retained_cells == 36
+    assert cleaned.display_srgb[14 * 30 + 14] == "#EFEDE8"
+    assert cleaned.display_srgb[14 * 30 + 15] == "#FFBEC8"
+    compact, box = trim_blank_margins(cleaned)
+    assert box == (10, 10, 20, 20)
+    assert (compact.width, compact.height) == (10, 10)
+    assert sum(c is not None for c in compact.display_srgb) == 36
+
+
+def test_transparent_border_is_already_blank_and_trimming_keeps_separate_details():
+    image = Image.new("RGBA", (20, 20))
+    image.putpixel((5, 5), (255, 0, 0, 255))
+    image.putpixel((13, 12), (255, 200, 210, 255))
+    sample = sample_grid(image, width=20, height=20, source_locator="original.png")
+    cleaned, report = remove_connected_border_background(sample, textured_fabric=True)
+    assert report.removed_cells == 0
+    assert report.retained_cells == 2
+    compact, box = trim_blank_margins(cleaned)
+    assert box == (3, 3, 16, 15)
+    assert compact.source_locator == "original.png"
+    assert [c for c in compact.display_srgb if c] == ["#FF0000", "#FFC8D2"]
+
+
+def test_mask_before_sampling_avoids_mixing_cloth_into_red_edges(tmp_path):
+    image = Image.new("RGB", (60, 60), "#E4E0D6")
+    # The middle cell is 60% red, 40% cloth. Its thread should remain red.
+    for y in range(20, 40):
+        for x in range(24, 36):
+            image.putpixel((x, y), (200, 20, 30))
+    source, normalized = tmp_path / "input.png", tmp_path / "normalized.png"
+    image.save(source)
+    normalize_image(source, normalized)
+    sampled, report = sample_fabric_foreground(normalized, width=3, height=3)
+    assert sampled.display_srgb[4] == "#C8141E"
+    assert report.retained_cells == 1
+    assert report.removed_cells == 8
+    assert sampled.source_sha256
+
+
+def test_uniform_fabric_sampling_does_not_delete_the_entire_image(tmp_path):
+    source, normalized = tmp_path / "input.png", tmp_path / "normalized.png"
+    Image.new("RGB", (30, 30), "#E4E0D6").save(source)
+    normalize_image(source, normalized)
+    sampled, report = sample_fabric_foreground(normalized, width=3, height=3)
+    assert report.retained_cells == 9 and report.removed_cells == 0
+    assert all(sampled.display_srgb)
 
 
 @pytest.mark.parametrize("threshold", [-1, float("nan"), 51])
