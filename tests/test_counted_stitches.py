@@ -2,10 +2,11 @@ from collections import Counter
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pytest
 from conftest import AccountClient
 from PIL import Image, ImageDraw
-from stitchforge.counted_stitches import recover_counted_stitches
+from stitchforge.counted_stitches import inspect_stitch_evidence, recover_counted_stitches
 from stitchforge_api import create_app
 
 MOTIF = ["...R...", "..RRR..", ".RRPRR.", "RRRRRRR", ".RRRRR.", "..RRR..", "...R..."]
@@ -29,6 +30,44 @@ def stitched_photo(path: Path, *, pitch=20, accent="#EDADA8") -> Path:
             draw.line(
                 (x - radius, y + radius, x + radius, y - radius), fill=colour, width=thickness
             )
+    image.save(path)
+    return path
+
+
+def aida_scene(path: Path, *, pitch=16, columns=48, rows=72) -> Path:
+    """Finished embroidery photo: Aida holes plus a large dark scene."""
+    width, height = pitch * columns, pitch * rows
+    cloth = np.full((height, width, 3), [228, 224, 214], dtype=np.uint8)
+    rows_i, cols_i = np.mgrid[:height, :width]
+    radius = max(1, round(pitch * 0.14))
+    holes = (cols_i % pitch) ** 2 + (rows_i % pitch) ** 2 <= radius * radius
+    cloth[holes] = [198, 192, 180]
+    image = Image.fromarray(cloth)
+    draw = ImageDraw.Draw(image)
+
+    def cross(column, row, colour):
+        x, y = column * pitch + pitch // 2, row * pitch + pitch // 2
+        radius_x, thickness = round(pitch * 0.32), max(2, round(pitch * 0.38))
+        draw.line(
+            (x - radius_x, y - radius_x, x + radius_x, y + radius_x),
+            fill=colour,
+            width=thickness,
+        )
+        draw.line(
+            (x - radius_x, y + radius_x, x + radius_x, y - radius_x),
+            fill=colour,
+            width=thickness,
+        )
+
+    for row in range(8, 40):
+        for column in range(10, 38):
+            cross(column, row, (40, 55, 70))
+    for row in range(40, 64):
+        for column in range(10, 38):
+            cross(column, row, (30, 80, 90) if row % 3 else (40, 55, 70))
+    for row in range(18, 28):
+        for column in range(18, 28):
+            cross(column, row, (220, 170, 40))
     image.save(path)
     return path
 
@@ -167,3 +206,47 @@ def test_explicit_manual_grid_is_not_overridden(tmp_path):
         document = response.json()["revision"]["document"]
         assert (document["grid"]["width"], document["grid"]["height"]) == (40, 50)
         assert "stitchforge.counted_stitches" not in document.get("extensions", {})
+
+
+def test_aida_cloth_reports_an_agreed_lattice_period(tmp_path):
+    source = aida_scene(tmp_path / "aida.png")
+    evidence = inspect_stitch_evidence(source)
+    assert evidence["lattice_period"] == 16
+    assert recover_counted_stitches(source) is None
+
+
+def test_printed_artwork_does_not_invent_a_cloth_lattice():
+    root = Path(__file__).resolve().parents[1] / "fixtures/fidelity/amazing-images-creator"
+    for sample in ("lucky-rabbit", "folk-owl", "parakeets"):
+        evidence = inspect_stitch_evidence(root / sample / "source.png")
+        assert evidence.get("lattice_period") is None
+
+
+def test_large_dark_embroidered_scene_stays_a_small_chart(tmp_path, monkeypatch):
+    from stitchforge_api import conversion as app_module
+
+    source = aida_scene(tmp_path / "scene.png")
+
+    def unexpected_ai(*_):
+        pytest.fail("A measured cloth lattice must not be enlarged by an AI proposal")
+
+    monkeypatch.setattr(app_module, "plan_import", unexpected_ai)
+    with AccountClient(create_app(tmp_path / "data")) as client:
+        created = client.post("/api/v1/projects", json={"name": "绣片小图"}).json()
+        response = client.post(
+            f"/api/v1/projects/{created['project']['project_id']}/convert-image",
+            params={"expected_head_revision_id": created["initial_revision"]["revision_id"]},
+            content=source.read_bytes(),
+        )
+        assert response.status_code == 201, response.text
+        result = response.json()
+        plan = result["planning_report"]["plan"]
+        document = result["revision"]["document"]
+        assert result["planning_report"]["method"] == "stitch_pitch"
+        assert (plan["grid_width"], plan["grid_height"]) == (96, 144)
+        assert plan["source_profile"] == "rendered_stitch"
+        assert 90 <= max(document["grid"]["width"], document["grid"]["height"]) <= 144
+        assert result["statistics"]["full_stitch_count"] > 200
+        assert result["optimization_report"] is None
+        assert result["rare_color_report"] is None
+        assert client.get("/api/v1/auth/me").json()["credits"] == 99

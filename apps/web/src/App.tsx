@@ -894,7 +894,7 @@ function App({ user, onLogout, onAccountRefresh }: {
             {rareColorSummary.retained_colors > 0 && <p className="import-explanation">另有 {rareColorSummary.retained_colors} 种少量线色未满足合并条件，已保留。</p>}
           </section>}
           {planningReport && <section className="inspector-section">
-            <div className="section-heading"><h2>自动方案</h2><span>{planningReport.method === 'counted_stitches' ? '按原图针脚还原' : planningReport.provider === 'deepseek' ? 'DeepSeek 分析' : planningReport.provider === 'codex' ? 'Codex 分析' : '本地分析'}</span></div>
+            <div className="section-heading"><h2>自动方案</h2><span>{planningReport.method === 'counted_stitches' ? '按原图针脚还原' : planningReport.method === 'stitch_pitch' ? '按针距还原' : planningReport.provider === 'deepseek' ? 'DeepSeek 分析' : planningReport.provider === 'codex' ? 'Codex 分析' : '本地分析'}</span></div>
             <p className="import-explanation">{planningReport.plan.explanation}</p>
             {planningReport.structure_review && <p className="import-explanation">
               <strong>{planningReport.structure_review.status === 'passed' ? '原图结构复核通过' : '本地结构检查通过'}</strong>

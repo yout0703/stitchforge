@@ -35,6 +35,18 @@ def _floss_distance(colour: np.ndarray, representative: np.ndarray) -> float:
     )
 
 
+def _agreed_period(
+    horizontal: tuple[int, float] | None,
+    vertical: tuple[int, float] | None,
+) -> int | None:
+    if horizontal is None or vertical is None:
+        return None
+    px, py = horizontal[0], vertical[0]
+    if abs(px - py) / max(px, py) > 0.12:
+        return None
+    return int(round((px + py) / 2))
+
+
 def _period(signal: np.ndarray) -> tuple[int, float] | None:
     window = max(9, (len(signal) // 6) | 1)
     smooth = np.convolve(
@@ -262,25 +274,47 @@ def inspect_stitch_evidence(source: Path) -> dict:
         image = image.convert("RGB")
         image.thumbnail((1536, 1536))
         rgb = np.asarray(image, dtype=np.float64) / 255
+    empty = {"periods": [], "subject_box": None, "lattice_period": None}
     border = np.concatenate((rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]))
     background = np.median(border, axis=0)
     if background.min() < 0.65 or np.ptp(background) > 0.16:
-        return {"periods": [], "subject_box": None}
-    mask = np.ptp(rgb, axis=2) > max(0.22, float(np.quantile(np.ptp(border, axis=1), 0.99)) + 0.12)
+        return empty
+    luma = rgb.mean(axis=2)
+    chroma = np.ptp(rgb, axis=2)
+    mask = chroma > max(0.22, float(np.quantile(np.ptp(border, axis=1), 0.99)) + 0.12)
     if not 0.015 < mask.mean() < 0.45:
-        return {"periods": [], "subject_box": None}
+        return empty
     ys, xs = np.nonzero(mask)
     left, right = np.quantile(xs, [0.001, 0.999]).astype(int)
     top, bottom = np.quantile(ys, [0.001, 0.999]).astype(int)
-    periods = set()
-    for signal in (mask, (1 - rgb.mean(axis=2)) * mask):
+    periods: set[int] = set()
+    lattice = None
+    for signal in (mask, (1 - luma) * mask):
         subject = signal[top : bottom + 1, left : right + 1]
-        for axis in (0, 1):
-            result = _period(subject.mean(axis=axis))
-            if result is not None:
-                periods.add(result[0])
+        horizontal, vertical = _period(subject.mean(axis=0)), _period(subject.mean(axis=1))
+        if horizontal is not None:
+            periods.add(horizontal[0])
+        if vertical is not None:
+            periods.add(vertical[0])
+        agreed = _agreed_period(horizontal, vertical)
+        if agreed is not None:
+            lattice = agreed
+    fabric = np.linalg.norm(rgb - background, axis=2) < 0.12
+    if 0.12 < float(fabric.mean()) < 0.88:
+        for signal in ((1 - luma) * fabric, chroma * fabric):
+            horizontal, vertical = _period(signal.mean(axis=0)), _period(signal.mean(axis=1))
+            agreed = _agreed_period(horizontal, vertical)
+            if agreed is None:
+                continue
+            lattice = agreed
+            if horizontal is not None:
+                periods.add(horizontal[0])
+            if vertical is not None:
+                periods.add(vertical[0])
+            break
     return {
         "periods": sorted(periods),
+        "lattice_period": lattice,
         "analysis_size": [image.width, image.height],
         "subject_box": [
             round(value * dimension / analysed)

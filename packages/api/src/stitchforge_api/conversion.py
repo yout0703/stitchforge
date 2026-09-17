@@ -42,7 +42,7 @@ from stitchforge.segmentation import (
 from stitchforge.stats import calculate_statistics
 from stitchforge_storage import ContentAddressedArtifactStore
 
-from .planning import ImportPlan, plan_import, validate_stitch_plan
+from .planning import ImportPlan, plan_from_stitch_evidence, plan_import, validate_stitch_plan
 from .structure_review import review_counted_candidates
 
 
@@ -177,8 +177,18 @@ def build_conversion(
                         ).model_dump(),
                     }
                 else:
-                    planning_report = plan_import(normalized_path, work)
-                    validate_stitch_plan(planning_report["plan"], evidence)
+                    pitch_plan = plan_from_stitch_evidence(evidence, normalized_path)
+                    if pitch_plan is not None:
+                        planning_report = {
+                            "provider": "local",
+                            "method": "stitch_pitch",
+                            "fallback_reason": None,
+                            "subject_evidence": evidence,
+                            "plan": pitch_plan.model_dump(),
+                        }
+                    else:
+                        planning_report = plan_import(normalized_path, work)
+                        validate_stitch_plan(planning_report["plan"], evidence)
                 plan = planning_report["plan"]
                 grid_width, grid_height = plan["grid_width"], plan["grid_height"]
                 color_budget, fabric_count = plan["color_budget"], plan["fabric_count"]
@@ -364,7 +374,11 @@ def build_conversion(
                 )
             optimization_report = None
             rare_color_report = None
-            if optimize and counted is None:
+            if (
+                optimize
+                and counted is None
+                and (planning_report or {}).get("method") != "stitch_pitch"
+            ):
                 optimization = optimize_small_components(document, sampled)
                 document = optimization.document
                 optimization_report = optimization.report.as_dict()

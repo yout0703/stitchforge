@@ -21,6 +21,38 @@ def image(tmp_path: Path, size=(400, 600)) -> Path:
     return path
 
 
+def test_stitch_pitch_plan_refines_small_lattice_to_keep_one_stitch_marks(tmp_path):
+    path = image(tmp_path, (1024, 1536))
+    plan = planning.plan_from_stitch_evidence(
+        {"lattice_period": 20, "analysis_size": [1024, 1536]},
+        path,
+    )
+    assert plan is not None
+    assert (plan.grid_width, plan.grid_height) == (102, 154)
+    assert plan.source_profile == "rendered_stitch"
+    assert plan.remove_border_background
+    assert "加密" in plan.explanation
+    assert plan.grid_width * plan.grid_height < 30_000
+
+
+def test_stitch_pitch_plan_keeps_an_already_detailed_lattice():
+    plan = planning.plan_from_stitch_evidence(
+        {"lattice_period": 8, "analysis_size": [1536, 1536]}
+    )
+    assert plan is not None
+    assert (plan.grid_width, plan.grid_height) == (192, 192)
+    assert "加密" not in plan.explanation
+
+
+def test_stitch_pitch_plan_ignores_one_axis_periods():
+    assert (
+        planning.plan_from_stitch_evidence(
+            {"periods": [16], "analysis_size": [960, 1440], "lattice_period": None}
+        )
+        is None
+    )
+
+
 def test_local_plan_keeps_aspect_and_limits(tmp_path):
     for width, height in [(400, 600), (4000, 1000), (16, 8), (1, 10000)]:
         plan = planning.local_plan(image(tmp_path, (width, height)))

@@ -63,7 +63,7 @@ export interface RareColorSummary {
 export interface ImageConversionResponse {
   planning_report?: {
     provider: 'codex' | 'deepseek' | 'local'
-    method?: 'counted_stitches'
+    method?: 'counted_stitches' | 'stitch_pitch'
     structure_review?: { status: 'passed' | 'unavailable'; summary: string } | null
     model?: string
     fallback_reason: string | null

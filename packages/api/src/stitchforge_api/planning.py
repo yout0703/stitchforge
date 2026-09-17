@@ -66,6 +66,61 @@ def _valid_geometry(plan: ImportPlan, width: int, height: int) -> bool:
     )
 
 
+def plan_from_stitch_evidence(evidence: dict, image_path: Path | None = None) -> ImportPlan | None:
+    """Size a finished embroidery photo from the cloth lattice.
+
+    If one cell per Aida square would be under 160 on the long side, sample at
+    half the pitch once so 1-stitch bars and stems survive.
+    """
+    raw_period = evidence.get("lattice_period")
+    size = evidence.get("analysis_size")
+    if raw_period is None or not size:
+        return None
+    period = int(raw_period)
+    width, height = (int(size[0]), int(size[1]))
+    if period < 8 or width < 8 or height < 8:
+        return None
+    grid_width, grid_height = max(1, round(width / period)), max(1, round(height / period))
+    refined = False
+    if max(grid_width, grid_height) < 160 and period >= 16:
+        period //= 2
+        grid_width, grid_height = max(1, round(width / period)), max(1, round(height / period))
+        refined = True
+    if not (8 <= grid_width <= MAX_GRID_SIDE and 8 <= grid_height <= MAX_GRID_SIDE):
+        return None
+    if grid_width * grid_height > MAX_GRID_CELLS:
+        return None
+    color_budget = 24
+    if image_path is not None:
+        fallback = local_plan(image_path)
+        color_budget = (
+            64
+            if grid_width * grid_height > 90_000
+            else min(48, max(16, fallback.color_budget if fallback.color_budget < 64 else 32))
+        )
+    detail = (
+        "加密一倍以保留窗格、细茎等单针结构"
+        if refined
+        else "一针一格"
+    )
+    plan = ImportPlan(
+        grid_width=grid_width,
+        grid_height=grid_height,
+        color_budget=color_budget,
+        fabric_count=16,
+        strands=2,
+        source_profile="rendered_stitch",
+        remove_border_background=True,
+        explanation=(
+            f"按底布针距采样，{detail}，整图 {grid_width}×{grid_height}，"
+            "不把成品绣片放大成插画网格。去底布后四周留空针；16 CT、2 股为制作建议。"
+        ),
+    )
+    if not _valid_geometry(plan, width, height):
+        return None
+    return plan
+
+
 def validate_stitch_plan(plan: dict, evidence: dict) -> None:
     """Compare whole-image grid proposals with measured pixels per stitch."""
     if plan["source_profile"] != "rendered_stitch" or not evidence.get("periods"):
@@ -94,8 +149,11 @@ def _planning_prompt(width: int, height: int, fallback: ImportPlan) -> str:
         "例如主体占照片宽度三分之一，整图必须给主体针数的三倍宽度，不能只分配主体针数。"
         "必须保留花瓣尖端数量、单针眼睛、连续的细茎、叶片和主体间空隙，"
         "以及独立装饰针；细茎不能被挤成背景，深浅绿色线材不能直接混成一色。"
-        "多人场景、面部、文字、建筑等复杂大图"
-        "优先采用480至600格长边、48至64色，原图足够大且细节密集时采用600格长边；"
+        "已能看见规律十字针或底布网格的成品绣片，整图必须按可见针距一针一格，"
+        "长边通常几十到两百格；不要因为主体是建筑、风景或人物就放到480至600格。"
+        "多人场景、面部、文字、建筑等复杂大图，仅当原图是插画或普通照片、"
+        "而不是成品绣片时，优先采用480至600格长边、48至64色；"
+        "原图足够大且细节密集时采用600格长边。"
         "已知像素稿可保留原生网格。不要仅凭目测宣称已精确恢复原生针格。"
         "颜色按实际图案需要选择1至64种；同一根线的阴影和高光不应增加色数。"
         "CT和股数是制作建议，不能从图片推断原作的实际布料；通常16CT两股。"
