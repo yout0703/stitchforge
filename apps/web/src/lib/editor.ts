@@ -16,6 +16,7 @@ export type EditorAction =
   | { type: 'reset'; document: PatternDocument }
   | { type: 'restore'; state: EditorState }
   | { type: 'saved'; document: PatternDocument }
+  | { type: 'rename'; title: string }
   | { type: 'begin'; label: string }
   | { type: 'paint'; indices: readonly number[]; recipe: number; label: string }
   | { type: 'end' | 'undo' | 'redo' }
@@ -90,6 +91,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
   switch (action.type) {
     case 'reset': return createEditor(action.document)
     case 'restore': return action.state
+    case 'rename': return {
+      ...state,
+      document: { ...state.document, metadata: { ...state.document.metadata, title: action.title } },
+      savedDocument: { ...state.savedDocument, metadata: { ...state.savedDocument.metadata, title: action.title } },
+    }
     // Save the exact submitted snapshot; edits made while the request runs remain dirty.
     case 'saved': return { ...state, savedDocument: action.document, dirtyCount: countDirty(state.document, action.document) }
     case 'begin': return { ...finish(state), active: { label: action.label, changes: new Map() } }

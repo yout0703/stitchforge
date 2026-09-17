@@ -30,8 +30,8 @@ def test_project_creation_starts_with_valid_empty_revision(tmp_path: Path) -> No
 
         assert project["head_revision_id"] == revision["revision_id"]
         assert revision["document"]["grid"] == {
-            "width": 1,
-            "height": 1,
+            "width": 64,
+            "height": 64,
             "origin": "top_left",
             "subgrid_scale": 2,
         }
@@ -111,12 +111,18 @@ def test_job_polling_cancellation_and_project_deletion(tmp_path: Path) -> None:
             f"/api/v1/projects/{project_id}/jobs",
             json={
                 "job_type": "conversion",
-                "parameters": {"color_budget": 24},
-                "input_revision_id": revision_id,
             },
         )
-        assert queued.status_code == 202
-        job_id = queued.json()["job_id"]
+        assert queued.status_code == 422
+        assert queued.json()["code"] == "UNSUPPORTED_JOB_TYPE"
+        job_id = client.app.state.store.enqueue_job(
+            "test-job",
+            project_id=project_id,
+            job_type="conversion",
+            parameters={},
+            input_revision_id=revision_id,
+            now_ms=0,
+        ).job_id
         assert client.get(f"/api/v1/jobs/{job_id}").json()["state"] == "QUEUED"
         cancelled = client.post(f"/api/v1/jobs/{job_id}/cancel")
         assert cancelled.status_code == 202
@@ -127,8 +133,7 @@ def test_job_polling_cancellation_and_project_deletion(tmp_path: Path) -> None:
             f"/api/v1/projects/{project_id}/jobs",
             json={"job_type": "conversion"},
         )
-        assert late.status_code == 409
-        assert late.json()["code"] == "CONFLICT"
+        assert late.status_code == 422
 
 
 def test_command_is_idempotent_and_locked_cells_are_rejected(
@@ -252,9 +257,7 @@ def test_image_conversion_creates_revision_and_serves_source_asset(tmp_path: Pat
         assert 0 < result["statistics"]["full_stitch_count"] < 100
         assert result["background_report"]["removed_cells"] > 0
         assert 1 <= result["palette_report"]["quality"]["selected_materials"] <= 4
-        assert result["palette_report"]["algorithm"] == (
-            "lab-cluster-then-material-ciede2000-v1"
-        )
+        assert result["palette_report"]["algorithm"] == ("lab-cluster-then-material-ciede2000-v1")
         assert result["recovery_report"] is None
         assert result["motif_resolution"] == {
             "algorithm": "largest-4-connected-component-v1",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -879,6 +879,7 @@ class SQLiteStore:
         retryable: bool = True,
         now_ms: int,
         request_key: str | None = None,
+        prepare_input: Callable[[], Any] | None = None,
     ) -> JobRecord:
         if max_attempts < 1:
             raise ValueError("max_attempts 必须至少为 1")
@@ -955,6 +956,11 @@ class SQLiteStore:
                     "INSERT OR IGNORE INTO asset_access VALUES (?, ?)",
                     (project["workspace_id"], parameters["source_sha256"]),
                 )
+            # Publish only after every rejection/constraint check, but before the
+            # transaction exposes this job to workers. Never unlink shared hashes
+            # on rollback: another project may already reference the same bytes.
+            if prepare_input is not None:
+                prepare_input()
             return self._get_job(connection, job_id)
 
     def _get_job(self, connection: sqlite3.Connection, job_id: str) -> JobRecord:
@@ -1465,7 +1471,13 @@ class SQLiteStore:
             )
             return self._get_job(connection, job_id)
 
-    def soft_delete_project(self, project_id: str, *, now_ms: int) -> ProjectRecord:
+    def soft_delete_project(
+        self,
+        project_id: str,
+        *,
+        now_ms: int,
+        expected_head_revision_id: str | None = None,
+    ) -> ProjectRecord:
         with self._transaction() as connection:
             project = connection.execute(
                 "SELECT * FROM projects WHERE project_id = ?", (project_id,)
@@ -1473,6 +1485,13 @@ class SQLiteStore:
             if project is None:
                 raise StorageNotFoundError(f"项目不存在: {project_id}")
             if project["deleted_at_ms"] is None:
+                if (
+                    expected_head_revision_id is not None
+                    and project["head_revision_id"] != expected_head_revision_id
+                ):
+                    raise StorageConflictError(
+                        f"REVISION_CONFLICT: current={project['head_revision_id']!r}"
+                    )
                 connection.execute(
                     """
                     UPDATE projects

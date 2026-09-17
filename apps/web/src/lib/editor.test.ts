@@ -10,6 +10,24 @@ function initial() {
 }
 
 describe('editing history', () => {
+  it('renames without marking edits saved or losing undo/redo history', () => {
+    let state = editorReducer(initial(), { type: 'paint', indices: [0], recipe: 0, label: '留空' })
+    const past = state.past
+    state = editorReducer(state, { type: 'rename', title: '新标题' })
+    expect(state.document.metadata.title).toBe('新标题')
+    expect(state.savedDocument.metadata.title).toBe('新标题')
+    expect(state.document.full_stitches.cells[0]).toBe(0)
+    expect(state.savedDocument.full_stitches.cells[0]).toBe(1)
+    expect(state.past).toBe(past)
+    expect(isDirty(state)).toBe(true)
+    state = editorReducer(state, { type: 'undo' })
+    expect(isDirty(state)).toBe(false)
+    state = editorReducer(state, { type: 'rename', title: '另一个标题' })
+    state = editorReducer(state, { type: 'redo' })
+    expect(isDirty(state)).toBe(true)
+    expect(state.document.metadata.title).toBe('另一个标题')
+  })
+
   it('undoes an entire overlapping stroke and redoes it in one step', () => {
     let state = initial()
     state = editorReducer(state, { type: 'begin', label: '画笔' })

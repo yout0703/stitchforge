@@ -43,16 +43,21 @@ export function AccountGate() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : '登录失败') }
     finally { setBusy(false) }
   }
-  if (loading) return <main className="account-page"><p role="status">正在打开你的工作台…</p></main>
+  if (loading) return <main id="main-content" className="account-page account-loading"><div className="brand-loader" aria-hidden="true" /><p role="status">正在打开你的工作台…</p></main>
   if (user) return <App key={user.user_id} user={user} onAccountRefresh={refresh} onLogout={async () => {
     authEpoch.current += 1
     await accountRequest('/auth/logout', {}); setUser(null); setError('')
   }} />
-  return <main className="account-page">
-    <section className="account-intro"><span className="brand-mark">SF</span><p>StitchForge · 十字绣工作台</p>
-      <h1>把喜欢的画面，<br />一针一线绣出来。</h1>
-      <p>上传图片生成图纸，或免费导入 OXS。<br />在手机、平板和电脑上，打开自己的图纸接着绣。</p>
-      <div className="account-benefits"><span>OXS 导入免费</span><span>看图不扣次数</span><span>图片生成按次使用</span></div>
+  return <><a className="skip-link" href="#main-content">跳到登录表单</a><main id="main-content" className="account-page">
+    <section className="account-intro"><div className="account-brand"><span className="brand-mark" aria-hidden="true">SF</span><p>StitchForge <span>十字绣工作台</span></p></div>
+      <p className="account-eyebrow">从像素到针脚，尺寸与线色都有据可查</p>
+      <h1>把喜欢的画面，<br />变成能绣的图纸。</h1>
+      <p className="account-copy">上传图片自动打版，或免费导入 OXS。图纸、原图与版本记录跟随账号保存，换一台设备也能继续。</p>
+      <div className="account-proof" aria-hidden="true">
+        <div className="proof-pattern"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
+        <div><span>当前图纸</span><strong>山茶与蓝雀</strong><small>86 × 104 格 · 24 色 · 14 CT</small></div>
+      </div>
+      <div className="account-benefits"><span>OXS 免费导入</span><span>查看与编辑不扣次数</span><span>图片生成按次计费</span></div>
     </section>
     <section className="account-card" aria-labelledby="account-title">
       <h2 id="account-title">{register ? '创建你的账号' : '登录你的工作台'}</h2>
@@ -60,11 +65,13 @@ export function AccountGate() {
       <form onSubmit={submit}>
         <label>邮箱<input autoComplete="username" name="email" type="email" maxLength={254} required disabled={busy} placeholder="you@example.com" /></label>
         <label>密码<input autoComplete={register ? 'new-password' : 'current-password'} name="password" type="password" minLength={10} maxLength={128} required disabled={busy} placeholder="至少 10 个字符" /></label>
+        {register && <label className="consent-field"><input name="consent" type="checkbox" required disabled={busy} /><span>我已阅读并同意 <a href="/terms.html" target="_blank">服务条款</a> 与 <a href="/privacy.html" target="_blank">隐私政策</a></span></label>}
         {error && <p role="alert" className="api-error">{error}</p>}
         <button className="primary-button" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '注册并开始' : '登录'}</button>
       </form>
       <button className="account-switch" disabled={busy} onClick={() => { setRegister(!register); setError('') }}>{register ? '已有账号？去登录' : '还没有账号？免费注册'}</button>
       <small>注册后即可免费导入与查看 OXS；生成图片图纸需先获取次数。</small>
+      <footer className="account-legal"><span>© 2026 StitchForge</span><a href="/privacy.html">隐私政策</a><a href="/terms.html">服务条款</a></footer>
     </section>
-  </main>
+  </main></>
 }

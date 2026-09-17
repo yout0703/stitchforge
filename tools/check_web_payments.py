@@ -129,6 +129,12 @@ with sync_playwright() as runner:
     expect(page.get_by_alt_text("微信支付二维码")).to_be_visible()
     assert user["credits"] == 0
     assert checkouts[-1] == {"provider": "wechat", "device": "desktop"}
+    page.get_by_role("button", name="稍后支付", exact=True).click()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.get_by_role("button", name="继续支付", exact=True).click()
+    expect(page.get_by_alt_text("微信支付二维码")).to_be_visible()
+    assert checkouts[-1] == {"provider": "wechat", "device": "mobile"}
+    page.set_viewport_size({"width": 1440, "height": 900})
     page.get_by_role("button", name="我已支付，查询到账", exact=True).click()
     expect(page.get_by_role("dialog").get_by_role("status")).to_contain_text("已到账")
     expect(page.locator(".credit-balance strong")).to_have_text("5")

@@ -12,6 +12,7 @@ class StripeProvider:
     label = "银行卡 / 海外支付"
     currencies = CURRENCIES
     modes = ("hosted",)
+    checkout_ttl_ms = 3600_000
 
     def __init__(self, *, secret_key, webhook_secret, public_origin):
         self.client = stripe.StripeClient(
@@ -40,7 +41,7 @@ class StripeProvider:
                             },
                         }
                     ],
-                    "expires_at": attempt["created_at_ms"] // 1000 + 3600,
+                    "expires_at": (attempt["created_at_ms"] + self.checkout_ttl_ms) // 1000,
                     "success_url": self.public_origin + "/#billing",
                     "cancel_url": self.public_origin + "/#billing",
                 },
@@ -50,7 +51,12 @@ class StripeProvider:
             raise PaymentError("暂时无法创建海外支付，请从原订单重试。") from error
         if not session.url:
             raise PaymentError("海外支付未返回支付页面。")
-        return {"kind": "redirect", "url": session.url, "session_id": session.id}
+        return {
+            "kind": "redirect",
+            "url": session.url,
+            "session_id": session.id,
+            "expires_at_ms": session.expires_at * 1000,
+        }
 
     def receipt(self, session: dict) -> PaymentReceipt | None:
         if session.get("livemode") != (not self.test_mode) or session.get("mode") != "payment":

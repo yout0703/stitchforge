@@ -93,7 +93,15 @@ def test_all_resource_paths_are_scoped_and_oxs_is_free(tmp_path):
         pid, rid = imported["project"]["project_id"], imported["initial_revision"]["revision_id"]
         asset = imported["source_sha256"]
         assert client.get(f"/api/v1/assets/{asset}").status_code == 200
-        job = client.post(f"/api/v1/projects/{pid}/jobs", json={"job_type": "test"}).json()
+        job = {
+            "job_id": client.app.state.store.enqueue_job(
+                "scoped-test-job",
+                project_id=pid,
+                job_type="test",
+                parameters={},
+                now_ms=0,
+            ).job_id
+        }
         assert client.get("/api/v1/auth/me").json()["credits"] == 0
         client.post("/api/v1/auth/logout")
         bob = register(client, "bob@example.com")

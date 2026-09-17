@@ -64,7 +64,13 @@ with sync_playwright() as runner:
         )
 
     def pixels():
-        page.wait_for_timeout(50)
+        # Compare pattern rendering, not the keyboard focus ring introduced by
+        # pointer interaction. Focus behavior has its own canvas regressions.
+        canvas.evaluate("c => c.blur()")
+        page.evaluate(
+            "() => new Promise(resolve => requestAnimationFrame(() => "
+            "requestAnimationFrame(resolve)))"
+        )
         return canvas.evaluate("(c) => c.toDataURL()")
 
     assert page.get_by_role("button", name="保存版本").count() == 0

@@ -80,6 +80,7 @@ with sync_playwright() as runner:
     box = canvas.bounding_box()
     assert box["y"] > 0 and box["y"] + box["height"] < 900
     # Start from empty canvas margin, traverse in both directions and repeat.
+    canvas.focus()
     page.keyboard.down("Space")
     for dx, dy in [(130, 80), (-210, -110), (60, 40)]:
         start = position()

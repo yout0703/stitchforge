@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { deleteProject, listProjects, renameProject, restoreProject } from '../lib/api'
 import type { LibraryProject } from '../lib/types'
 import {
@@ -16,7 +16,7 @@ import {
 interface Props {
   onOpen: (id: string) => Promise<void>
   onRemoved: (id: string) => void
-  onRenamed: (id: string, name: string, head: string) => void
+  onRenamed: (id: string, name: string, head: string, previousHead: string) => void
   onBusy: (busy: boolean) => void
 }
 
@@ -30,8 +30,35 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(() => new Set())
   const [renaming, setRenaming] = useState<LibraryProject | null>(null)
   const [name, setName] = useState('')
+  const renameDialogRef = useRef<HTMLElement>(null)
+  const busyRef = useRef(false)
+
+  useEffect(() => { busyRef.current = busy }, [busy])
+  useEffect(() => {
+    if (!renaming) return
+    const previousFocus = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
+    const dialog = renameDialogRef.current
+    dialog?.querySelector<HTMLInputElement>('input')?.focus()
+    function keepFocusInside(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!busyRef.current) setRenaming(null)
+        return
+      }
+      if (event.key !== 'Tab' || !dialog) return
+      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')]
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && window.document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.document.addEventListener('keydown', keepFocusInside)
+    return () => { window.document.removeEventListener('keydown', keepFocusInside); previousFocus?.focus() }
+  }, [renaming])
 
   useEffect(() => {
     let cancelled = false
@@ -131,7 +158,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
               </select>
             </div>
 
-            <button type="button" className="quiet-button refresh-button" disabled={busy} onClick={refresh}>
+            <button type="button" className="quiet-button refresh-button" aria-label="刷新图纸列表" disabled={busy} onClick={refresh}>
               <IconRefresh aria-hidden="true" />
               <span>刷新列表</span>
             </button>
@@ -139,17 +166,26 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
         </div>
       </div>
 
-      {error && <p className="library-error" role="alert">{error}</p>}
-
-      {loading ? (
+      {error ? (
+        <div className="library-error library-error-panel" role="alert">
+          <div><strong>暂时无法读取图纸</strong><p>{error}</p></div>
+          <button type="button" className="quiet-button" onClick={refresh}>重新加载</button>
+        </div>
+      ) : loading ? (
         <div className="library-loading" role="status">
-          <div className="loading-spinner" />
-          <p className="library-empty">正在读取图纸…</p>
+          <span className="sr-only">正在读取图纸…</span>
+          <div className="project-cards" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton-card" key={index}>
+              <div className="skeleton-media" />
+              <div className="skeleton-body"><i /><i /><i /></div>
+            </div>)}
+          </div>
         </div>
       ) : (
         <>
           <div className="library-summary">
-            {deleted ? '回收站' : '图纸'} · {result.total} 份{deleted && ' · 可随时恢复，原图和历史版本仍保留'}
+            <span>{deleted ? '回收站' : '图纸'} · {result.total} 份{deleted && ' · 可随时恢复，原图和历史版本仍保留'}</span>
+            <span className="library-private-note">仅自己可见</span>
           </div>
 
           {result.items.length === 0 ? (
@@ -175,14 +211,15 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                         aria-label={`打开 ${project.name}`}
                         onClick={() => void action(() => onOpen(project.project_id))}
                       >
-                        {project.head_revision_id ? (
+                        {project.head_revision_id && !failedThumbnails.has(project.project_id) ? (
                           <img
                             loading="lazy"
                             alt={`${project.name}缩略图`}
                             src={`/api/v1/projects/${encodeURIComponent(project.project_id)}/thumbnail?revision_id=${encodeURIComponent(project.head_revision_id)}`}
+                            onError={() => setFailedThumbnails((current) => new Set(current).add(project.project_id))}
                           />
                         ) : (
-                          <div className="preview-placeholder">暂无预览</div>
+                          <div className="preview-placeholder">预览暂不可用</div>
                         )}
                       </button>
                       <span className={`project-kind-badge ${kindMeta.className}`}>
@@ -231,6 +268,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                             <button
                               className="quiet-button edit-btn"
                               type="button"
+                              aria-label={`重命名 ${project.name}`}
                               title="重命名"
                               disabled={busy || !project.head_revision_id}
                               onClick={() => { setRenaming(project); setName(project.name) }}
@@ -241,6 +279,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                             <button
                               className="quiet-button delete-btn"
                               type="button"
+                              aria-label={`将 ${project.name} 移入回收站`}
                               title="移入回收站"
                               disabled={busy}
                               onClick={() => {
@@ -291,7 +330,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
 
       {renaming && (
         <div className="import-backdrop">
-          <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+          <section ref={renameDialogRef} className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
             <div className="import-heading">
               <div>
                 <h2 id="rename-title">重命名图纸</h2>
@@ -304,7 +343,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                 event.preventDefault()
                 void action(async () => {
                   const revision = await renameProject(renaming.project_id, name.trim(), renaming.head_revision_id!)
-                  onRenamed(renaming.project_id, name.trim(), revision.revision_id)
+                  onRenamed(renaming.project_id, name.trim(), revision.revision_id, renaming.head_revision_id!)
                   setRenaming(null)
                   refresh()
                 })

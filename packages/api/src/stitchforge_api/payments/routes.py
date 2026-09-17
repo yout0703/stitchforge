@@ -47,7 +47,12 @@ def payment_router() -> APIRouter:
             raise PaymentError("该支付渠道尚未开放。")
         return provider
 
-    def public_checkout(order_id: str, attempt: dict, result: dict) -> dict:
+    def expires_at(attempt: dict, result: dict, provider) -> int:
+        return result.get("expires_at_ms") or (
+            attempt["created_at_ms"] + getattr(provider, "checkout_ttl_ms", 1800_000)
+        )
+
+    def public_checkout(order_id: str, attempt: dict, result: dict, provider) -> dict:
         # Session identifiers and raw payment codes remain server-side.
         return {
             "order_id": order_id,
@@ -55,7 +60,7 @@ def payment_router() -> APIRouter:
             "kind": result["kind"],
             "url": result.get("url"),
             "qr_url": f"/api/v1/billing/orders/{order_id}/qr" if result["kind"] == "qr" else None,
-            "expires_at_ms": attempt["created_at_ms"] + 1800_000,
+            "expires_at_ms": expires_at(attempt, result, provider),
         }
 
     @router.post("/billing/orders/{order_id}/checkout")
@@ -86,17 +91,18 @@ def payment_router() -> APIRouter:
             )
         request.app.state.accounts.throttle(f"checkout:{user['user_id']}", limit=60)
         attempt = payments.bind(order_id, user["user_id"], provider.id, mode)
-        if now_ms() > attempt["created_at_ms"] + 1800_000:
+        cached = json.loads(attempt["checkout_json"] or "{}")
+        if now_ms() >= expires_at(attempt, cached, provider):
             raise AccountError(
                 "CHECKOUT_EXPIRED", "此支付入口已过期，请先查单确认，再新建充值订单。", 409
             )
         if attempt["checkout_json"]:
-            return public_checkout(order_id, attempt, json.loads(attempt["checkout_json"]))
+            return public_checkout(order_id, attempt, cached, provider)
         result = provider.checkout(
             order, attempt, mode, request.client.host if request.client else "127.0.0.1"
         )
         payments.save_checkout(order_id, result)
-        return public_checkout(order_id, attempt, result)
+        return public_checkout(order_id, attempt, result, provider)
 
     @router.get("/billing/orders/{order_id}")
     def order_status(order_id: str, request: Request, user: Annotated[dict, Depends(current_user)]):
@@ -123,14 +129,11 @@ def payment_router() -> APIRouter:
         payments = request.app.state.payments
         order = payments.order(order_id, user["user_id"])
         attempt = payments.attempt(order_id)
-        if (
-            not attempt
-            or order["status"] != "pending"
-            or not attempt["checkout_json"]
-            or now_ms() > attempt["created_at_ms"] + 1800_000
-        ):
+        if not attempt or order["status"] != "pending" or not attempt["checkout_json"]:
             raise AccountError("CHECKOUT_EXPIRED", "支付二维码不可用。", 404)
         result = json.loads(attempt["checkout_json"])
+        if now_ms() >= expires_at(attempt, result, provider_for(request, attempt["provider"])):
+            raise AccountError("CHECKOUT_EXPIRED", "支付二维码不可用。", 404)
         if result.get("kind") != "qr":
             raise AccountError("NOT_FOUND", "此订单不使用二维码支付。", 404)
         output = io.BytesIO()

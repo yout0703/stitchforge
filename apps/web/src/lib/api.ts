@@ -31,11 +31,11 @@ export async function downloadChart(projectId: string, revisionId: string, forma
   return response.blob()
 }
 
-export async function createProject(name: string): Promise<ProjectCreationResponse> {
+export async function createProject(name: string, dimensions?: { width: number; height: number }): Promise<ProjectCreationResponse> {
   const response = await apiFetch('/api/v1/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, fabric_count: 14, fabric_color: '#FFFFFF' }),
+    body: JSON.stringify({ name, fabric_count: 14, fabric_color: '#FFFFFF', ...dimensions }),
   })
   const body: unknown = await response.json()
   if (!response.ok) {
@@ -194,8 +194,9 @@ export function renameProject(projectId: string, name: string, head: string) {
   })
 }
 
-export function deleteProject(projectId: string) {
-  return libraryRequest(`/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
+export function deleteProject(projectId: string, expectedHeadRevisionId?: string) {
+  const query = expectedHeadRevisionId ? `?${new URLSearchParams({ expected_head_revision_id: expectedHeadRevisionId })}` : ''
+  return libraryRequest(`/${encodeURIComponent(projectId)}${query}`, { method: 'DELETE' })
 }
 
 export function restoreProject(projectId: string) {

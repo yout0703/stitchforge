@@ -42,10 +42,18 @@ class PaymentStore:
                 "SELECT * FROM payment_attempts WHERE order_id = ?", (order_id,)
             ).fetchone()
             if old:
-                if old["provider"] != provider or old["mode"] != mode:
+                if old["provider"] != provider:
                     raise AccountError(
                         "PAYMENT_METHOD_LOCKED",
-                        "此订单已选择支付方式，请继续原方式支付或新建订单。",
+                        "此订单已选择其他支付方式，请继续原方式支付；如已付款，请查单确认，勿重复下单。",
+                        409,
+                    )
+                if old["mode"] != mode:
+                    device = "电脑" if old["mode"] in {"native", "page"} else "手机系统浏览器"
+                    raise AccountError(
+                        "PAYMENT_DEVICE_LOCKED",
+                        f"此订单已在{device}发起，请返回原设备继续支付。"
+                        "如已付款，请查单确认，勿重复下单。",
                         409,
                     )
                 return dict(old)

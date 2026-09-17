@@ -14,7 +14,7 @@ from threading import BoundedSemaphore
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, FastAPI, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageColor
@@ -59,6 +59,8 @@ class StrictModel(BaseModel):
 
 class CreateProjectRequest(StrictModel):
     name: str = Field(min_length=1, max_length=256)
+    width: int = Field(default=64, ge=1, le=MAX_GRID_SIDE)
+    height: int = Field(default=64, ge=1, le=MAX_GRID_SIDE)
     fabric_count: int = Field(default=14, ge=6, le=40)
     fabric_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-F]{6}$")
 
@@ -114,8 +116,24 @@ def _identifier(prefix: str) -> str:
 
 
 def _empty_document(
-    *, project_id: str, title: str, fabric_count: int, fabric_color: str
+    *,
+    project_id: str,
+    title: str,
+    fabric_count: int,
+    fabric_color: str,
+    width: int = 64,
+    height: int = 64,
 ) -> dict[str, Any]:
+    colors = [
+        ("墨黑", "#292524"),
+        ("暖白", "#FFFDF7"),
+        ("砖红", "#B6533E"),
+        ("金黄", "#D5A43D"),
+        ("草绿", "#53795A"),
+        ("湖蓝", "#527E9B"),
+        ("淡紫", "#947AA3"),
+        ("浅粉", "#D69A9B"),
+    ]
     return {
         "schema_version": "0.1.0",
         "required_features": ["full_cross"],
@@ -126,7 +144,7 @@ def _empty_document(
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "purpose": "user_design",
         },
-        "grid": {"width": 1, "height": 1, "origin": "top_left", "subgrid_scale": 2},
+        "grid": {"width": width, "height": height, "origin": "top_left", "subgrid_scale": 2},
         "fabric": {
             "type": "aida",
             "count": fabric_count,
@@ -135,12 +153,36 @@ def _empty_document(
             "display_srgb": fabric_color,
             "margins_mm": {"top": 50, "right": 50, "bottom": 50, "left": 50},
         },
-        "materials": [],
-        "recipes": [],
-        "full_stitches": {"encoding": "row-major-u16", "top_leg": "slash", "cells": [0]},
+        "materials": [
+            {
+                "id": f"m_basic_{index}",
+                "brand": "自定义",
+                "series": "基础配色",
+                "code": f"B{index:02}",
+                "name": name,
+                "color": {"display_srgb": color, "status": "synthetic", "source_ref": "src_basic"},
+            }
+            for index, (name, color) in enumerate(colors, 1)
+        ],
+        "recipes": [
+            {
+                "id": f"r_basic_{index}",
+                "index": index,
+                "components": [{"material_id": f"m_basic_{index}", "strands": 2}],
+            }
+            for index in range(1, len(colors) + 1)
+        ],
+        "full_stitches": {
+            "encoding": "row-major-u16",
+            "top_leg": "slash",
+            "cells": [0] * (width * height),
+        },
         "regions": [],
-        "legend": [],
-        "constraints": {"color_budget": 1, "metric_profile": "quality_4n_v1"},
+        "legend": [
+            {"recipe_id": f"r_basic_{index}", "symbol_id": f"s{index:03}"}
+            for index in range(1, len(colors) + 1)
+        ],
+        "constraints": {"color_budget": len(colors), "metric_profile": "quality_4n_v1"},
         "provenance": {
             "source_asset_hashes": [],
             "engine_version": "stitchforge-0.1.0",
@@ -149,9 +191,27 @@ def _empty_document(
             "generation_config_hash": None,
             "random_seed": None,
             "ai_proposal_hash": None,
-            "sources": [],
+            "sources": [
+                {
+                    "id": "src_basic",
+                    "locator": "stitchforge:basic-palette",
+                    "description": "自定义数字基础配色，不对应实体品牌绣线色号。",
+                    "permission_status": "redistributable",
+                }
+            ],
         },
     }
+
+
+async def read_oxs_upload(request: Request) -> bytes:
+    payload = bytearray()
+    async for chunk in request.stream():
+        if len(payload) + len(chunk) > MAX_OXS_BYTES:
+            raise AccountError("UPLOAD_TOO_LARGE", "OXS 文件超过 16 MiB 限制", 413)
+        payload.extend(chunk)
+    if not payload:
+        raise AccountError("INVALID_OXS", "请选择非空的 OXS 文件", 422)
+    return bytes(payload)
 
 
 def _request_id(request: Request) -> str:
@@ -230,6 +290,8 @@ def _router() -> APIRouter:
             title=body.name,
             fabric_count=body.fabric_count,
             fabric_color=body.fabric_color,
+            width=body.width,
+            height=body.height,
         )
         project, revision = store.create_project_with_revision(
             project_id,
@@ -246,15 +308,8 @@ def _router() -> APIRouter:
         request: Request,
         store: StoreDependency,
         artifact_store: ArtifactStoreDependency,
-        payload: Annotated[bytes, Body(media_type="application/octet-stream")],
+        payload: Annotated[bytes, Depends(read_oxs_upload)],
     ) -> Any:
-        if not payload or len(payload) > MAX_OXS_BYTES:
-            return _error_response(
-                request,
-                status_code=422,
-                code="INVALID_OXS",
-                message="请选择非空且不超过 16 MiB 的 OXS 文件",
-            )
         with tempfile.TemporaryDirectory(prefix="oxs-", dir=request.app.state.work_dir) as name:
             path = Path(name) / "source.oxs"
             path.write_bytes(payload)
@@ -382,8 +437,20 @@ def _router() -> APIRouter:
         return asdict(store.get_project(project_id))
 
     @router.delete("/projects/{project_id}", status_code=status.HTTP_202_ACCEPTED)
-    def delete_project(project_id: str, store: StoreDependency) -> dict[str, Any]:
-        return asdict(store.soft_delete_project(project_id, now_ms=_now_ms()))
+    def delete_project(
+        project_id: str,
+        store: StoreDependency,
+        expected_head_revision_id: Annotated[
+            str | None, Query(min_length=1, max_length=128)
+        ] = None,
+    ) -> dict[str, Any]:
+        return asdict(
+            store.soft_delete_project(
+                project_id,
+                now_ms=_now_ms(),
+                expected_head_revision_id=expected_head_revision_id,
+            )
+        )
 
     @router.get("/projects/{project_id}/revisions/{revision_id}")
     def get_revision(project_id: str, revision_id: str, store: StoreDependency) -> dict[str, Any]:
@@ -528,17 +595,7 @@ def _router() -> APIRouter:
     ) -> dict[str, Any]:
         if body.job_type == "image_conversion":
             raise ConversionRequestError("图片任务请使用图片上传入口")
-        job = store.enqueue_job(
-            _identifier("job"),
-            project_id=project_id,
-            job_type=body.job_type,
-            parameters=body.parameters,
-            input_revision_id=body.input_revision_id,
-            max_attempts=body.max_attempts,
-            retryable=body.retryable,
-            now_ms=_now_ms(),
-        )
-        return asdict(job)
+        raise AccountError("UNSUPPORTED_JOB_TYPE", "不支持此任务类型，请使用图片上传入口。", 422)
 
     @router.post("/projects/{project_id}/commands", status_code=status.HTTP_201_CREATED)
     def apply_command(

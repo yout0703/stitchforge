@@ -1,5 +1,6 @@
 """Durable image uploads and account-scoped generation request recovery."""
 
+import hashlib
 from dataclasses import asdict
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -69,17 +70,20 @@ def generation_router() -> APIRouter:
         payload = await read_image_upload(request)
 
         def enqueue():
-            asset = request.app.state.artifact_store.put_bytes(
-                payload, media_type="application/octet-stream"
-            )
             return request.app.state.store.enqueue_job(
                 "job_" + uuid4().hex,
                 project_id=project_id,
                 job_type="image_conversion",
                 input_revision_id=expected_head_revision_id,
                 request_key=request_key,
-                parameters={"source_sha256": asset.artifact_hash, "options": options.model_dump()},
+                parameters={
+                    "source_sha256": hashlib.sha256(payload).hexdigest(),
+                    "options": options.model_dump(),
+                },
                 now_ms=now_ms(),
+                prepare_input=lambda: request.app.state.artifact_store.put_bytes(
+                    payload, media_type="application/octet-stream"
+                ),
             )
 
         return asdict(await run_in_threadpool(enqueue))

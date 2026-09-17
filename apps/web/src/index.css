@@ -1,59 +1,59 @@
 :root {
   /* StitchForge Design Tokens - Color Palette */
-  --sf-accent-50: #eff5ff;
-  --sf-accent-100: #dbe7fe;
-  --sf-accent-200: #bfd5fe;
-  --sf-accent-300: #93bbfd;
-  --sf-accent-500: #2c62f6;
-  --sf-accent-600: #1d4fd7;
-  --sf-accent-700: #143cb8;
-  --sf-accent-glow: rgba(44, 98, 246, 0.22);
+  --sf-accent-50: #fff4ee;
+  --sf-accent-100: #fce4d8;
+  --sf-accent-200: #f5c6b2;
+  --sf-accent-300: #e89d7e;
+  --sf-accent-500: #b85f43;
+  --sf-accent-600: #98472f;
+  --sf-accent-700: #753522;
+  --sf-accent-glow: rgba(184, 95, 67, 0.2);
 
-  --sf-ink-950: #0b0f17;
-  --sf-ink-900: #111827;
-  --sf-ink-800: #1f2937;
-  --sf-ink-700: #374151;
-  --sf-ink-600: #4b5563;
-  --sf-ink-500: #6b7280;
-  --sf-ink-400: #9ca3af;
-  --sf-ink-300: #d1d5db;
-  --sf-ink-200: #e5e7eb;
-  --sf-ink-100: #f3f4f6;
+  --sf-ink-950: #211e1a;
+  --sf-ink-900: #2b2722;
+  --sf-ink-800: #3c3730;
+  --sf-ink-700: #4f4941;
+  --sf-ink-600: #655e55;
+  --sf-ink-500: #756d63;
+  --sf-ink-400: #8d8479;
+  --sf-ink-300: #b8afa4;
+  --sf-ink-200: #d9d2c8;
+  --sf-ink-100: #eee9e2;
 
   /* Surfaces & Canvas */
-  --sf-bg-canvas: #e6e9ee;
-  --sf-bg-canvas-subtle: #edf0f5;
-  --sf-bg-panel: #ffffff;
-  --sf-bg-panel-subtle: #f9fafb;
-  --sf-bg-muted: #f3f4f6;
-  --sf-bg-elevated: #ffffff;
-  --sf-bg-glass: rgba(255, 255, 255, 0.88);
+  --sf-bg-canvas: #ece8e1;
+  --sf-bg-canvas-subtle: #f2efe9;
+  --sf-bg-panel: #fffdf9;
+  --sf-bg-panel-subtle: #f8f5ef;
+  --sf-bg-muted: #f1ece5;
+  --sf-bg-elevated: #fffdf9;
+  --sf-bg-glass: rgba(255, 253, 249, 0.9);
 
   /* Lines & Borders */
-  --sf-border-subtle: #e5e7eb;
-  --sf-border: #d1d5db;
-  --sf-border-strong: #9ca3af;
+  --sf-border-subtle: #e4ddd3;
+  --sf-border: #d2c9bd;
+  --sf-border-strong: #a99f92;
 
   /* Status Colors */
-  --sf-success: #10b981;
-  --sf-success-bg: #ecfdf5;
-  --sf-success-border: #a7f3d0;
-  --sf-warning: #f59e0b;
-  --sf-warning-bg: #fffbeb;
-  --sf-warning-border: #fde68a;
-  --sf-danger: #ef4444;
-  --sf-danger-bg: #fef2f2;
-  --sf-danger-border: #fecaca;
-  --sf-info: #0284c7;
-  --sf-info-bg: #f0f9ff;
-  --sf-info-border: #bae6fd;
+  --sf-success: #426d52;
+  --sf-success-bg: #eef7f0;
+  --sf-success-border: #b9d7c1;
+  --sf-warning: #8c5e14;
+  --sf-warning-bg: #fff7e5;
+  --sf-warning-border: #ead29b;
+  --sf-danger: #a43d36;
+  --sf-danger-bg: #fff1ef;
+  --sf-danger-border: #e8b9b4;
+  --sf-info: #536879;
+  --sf-info-bg: #f0f5f7;
+  --sf-info-border: #c6d4db;
 
   /* Elevation Shadows */
-  --sf-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --sf-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-  --sf-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
-  --sf-shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
-  --sf-shadow-xl: 0 20px 48px -8px rgba(15, 23, 42, 0.22), 0 8px 16px -4px rgba(15, 23, 42, 0.08);
+  --sf-shadow-xs: 0 1px 2px rgba(64, 47, 36, 0.05);
+  --sf-shadow-sm: 0 2px 5px rgba(64, 47, 36, 0.07);
+  --sf-shadow-md: 0 8px 20px -8px rgba(64, 47, 36, 0.2);
+  --sf-shadow-lg: 0 18px 38px -18px rgba(64, 47, 36, 0.3);
+  --sf-shadow-xl: 0 28px 64px -28px rgba(64, 47, 36, 0.42);
 
   /* Radii */
   --sf-radius-xs: 4px;
@@ -79,8 +79,8 @@
   --radius: var(--sf-radius-md);
 
   /* Typography */
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+  font-family: "Avenir Next", Avenir, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
   color: var(--sf-ink-900);
   background-color: var(--sf-bg-canvas);
   font-synthesis: none;
@@ -99,6 +99,10 @@ body,
   min-width: 320px;
   min-height: 100%;
   margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -123,9 +127,78 @@ button {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-canvas:focus-visible {
+textarea:focus-visible,
+canvas:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--sf-accent-500);
   outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 12px;
+  left: 12px;
+  padding: 10px 14px;
+  border-radius: var(--sf-radius-sm);
+  background: var(--sf-ink-950);
+  color: #fffdf9;
+  font-size: 13px;
+  font-weight: 700;
+  transform: translateY(-160%);
+  transition: transform var(--sf-transition-fast);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fatal-error {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 14px;
+  padding: 32px;
+  background:
+    linear-gradient(rgba(117, 109, 99, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 109, 99, 0.055) 1px, transparent 1px),
+    var(--sf-bg-canvas);
+  background-size: 18px 18px;
+}
+
+.fatal-error h1,
+.fatal-error p {
+  max-width: 34rem;
+  margin: 0;
+}
+
+.fatal-error h1 {
+  font-family: "Iowan Old Style", "Songti SC", STSong, serif;
+  font-size: clamp(32px, 6vw, 56px);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.fatal-error p {
+  color: var(--sf-ink-600);
+  line-height: 1.75;
+}
+
+.fatal-error .primary-button {
+  margin-top: 8px;
 }
 
 /* Tabular figures for numbers, coordinates, stitch counts */

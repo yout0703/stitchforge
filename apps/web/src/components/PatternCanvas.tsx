@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent } from 'react'
 import { recipeSymbols } from '../lib/symbols'
 import { floodIndices } from '../lib/editor'
 import { StrokeBatch } from '../lib/strokeBatch'
@@ -39,11 +39,13 @@ interface PatternCanvasProps {
 
 interface Gesture {
   pointerId: number
-  kind: 'pan' | 'paint' | 'select'
+  kind: 'pan' | 'paint' | 'pending-paint' | 'select'
   x: number
   y: number
   lastCell: CellPosition | null
   recipe?: number
+  label?: string
+  fill?: boolean
   distance?: number
 }
 
@@ -83,6 +85,8 @@ export function PatternCanvas({
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, offsetX: 48, offsetY: 44 })
   const [temporaryPan, setTemporaryPan] = useState(false)
   const [panning, setPanning] = useState(false)
+  const [canvasFocused, setCanvasFocused] = useState(false)
+  const [keyboardCell, setKeyboardCell] = useState({ col: 0, row: 0 })
   const symbols = useMemo(() => recipeSymbols({ recipes: document.recipes, legend: document.legend }), [document.recipes, document.legend])
   const colors = useMemo(() => {
     const materials = new Map(document.materials.map((item) => [item.id, item]))
@@ -105,6 +109,8 @@ export function PatternCanvas({
     }
 
     function handleKeyDown(event: KeyboardEvent) {
+      // A canvas shortcut must not consume Space on toolbar buttons or dialogs.
+      if (event.target !== canvasRef.current) return
       if (
         !shouldActivateTemporaryPan({
           key: event.key,
@@ -124,7 +130,7 @@ export function PatternCanvas({
     function clearTemporaryPan(event?: KeyboardEvent) {
       if (event && event.code !== 'Space' && event.key !== ' ') return
       if (!temporaryPanRef.current) return
-      event?.preventDefault()
+      if (event?.target === canvasRef.current) event?.preventDefault()
       temporaryPanRef.current = false
       setTemporaryPan(false)
     }
@@ -152,17 +158,29 @@ export function PatternCanvas({
     const container = containerRef.current
     if (!canvas || !container) return
     let animationFrame = 0
+    let previousSize: { width: number; height: number } | null = null
     const observer = new ResizeObserver(([entry]) => {
-      const width = Math.max(1, Math.floor(entry.contentRect.width))
-      const height = Math.max(1, Math.floor(entry.contentRect.height))
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       cancelAnimationFrame(animationFrame)
+      // Mobile source comparison hides this pane. Do not fit a hidden 0×0
+      // canvas or discard the reader's current position when it becomes visible.
+      const width = Math.floor(entry.contentRect.width)
+      const height = Math.floor(entry.contentRect.height)
+      if (width <= 0 || height <= 0) return
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       animationFrame = requestAnimationFrame(() => {
         const pixelWidth = Math.floor(width * dpr)
         const pixelHeight = Math.floor(height * dpr)
         if (canvas.width !== pixelWidth) canvas.width = pixelWidth
         if (canvas.height !== pixelHeight) canvas.height = pixelHeight
-        setViewport(fitViewport(width, height, document.grid.width, document.grid.height))
+        const previous = previousSize
+        setViewport((current) => previous
+          ? {
+              ...current,
+              offsetX: current.offsetX + (width - previous.width) / 2,
+              offsetY: current.offsetY + (height - previous.height) / 2,
+            }
+          : fitViewport(width, height, document.grid.width, document.grid.height))
+        previousSize = { width, height }
         setSurface((current) =>
           current.width === width && current.height === height && current.dpr === dpr
             ? current
@@ -270,8 +288,15 @@ export function PatternCanvas({
       context.strokeRect(x + 1, y + 1, width - 2, height - 2)
       context.setLineDash([])
     }
+    if (canvasFocused) {
+      const x = keyboardCell.col * size
+      const y = keyboardCell.row * size
+      context.strokeStyle = '#98472f'
+      context.lineWidth = Math.max(2, Math.min(4, size * 0.16))
+      context.strokeRect(x + 1, y + 1, Math.max(1, size - 2), Math.max(1, size - 2))
+    }
     context.restore()
-  }, [colors, document, selection, surface, viewport, highlightedRecipe, showSymbols, showGrid, symbols])
+  }, [canvasFocused, colors, document, keyboardCell, selection, surface, viewport, highlightedRecipe, showSymbols, showGrid, symbols])
 
   function cellAt(event: PointerEvent<HTMLCanvasElement>) {
     const position = pointerPosition(event)
@@ -331,9 +356,32 @@ export function PatternCanvas({
     }
     const recipe = tool === 'erase' ? 0 : selectedRecipe
     if (tool === 'fill') {
+      if (event.pointerType === 'touch') {
+        gestureRef.current = {
+          pointerId: event.pointerId,
+          kind: 'pending-paint',
+          recipe,
+          label: '连通填色',
+          fill: true,
+          ...position,
+          lastCell: cell,
+        }
+        return
+      }
       onEditBegin('连通填色')
       onPaint(floodIndices(document.full_stitches.cells, document.grid.width, cell.index), recipe)
       onEditEnd()
+      return
+    }
+    if (event.pointerType === 'touch') {
+      gestureRef.current = {
+        pointerId: event.pointerId,
+        kind: 'pending-paint',
+        recipe,
+        label: tool === 'erase' ? '橡皮擦' : '画笔',
+        ...position,
+        lastCell: cell,
+      }
       return
     }
     onEditBegin(tool === 'erase' ? '橡皮擦' : '画笔')
@@ -362,7 +410,13 @@ export function PatternCanvas({
     onHover(cell ? { col: cell.col, row: cell.row } : null)
     const gesture = gestureRef.current
     if (!gesture || gesture.pointerId !== event.pointerId) return
-    if (gesture.kind === 'pan') {
+    if (gesture.kind === 'pending-paint') {
+      if (gesture.fill || !cell || !gesture.lastCell || Math.hypot(position.x - gesture.x, position.y - gesture.y) <= 5) return
+      onEditBegin(gesture.label ?? '画笔')
+      onPaint(lineCellIndices(gesture.lastCell, cell, document.grid.width), gesture.recipe ?? selectedRecipe)
+      gesture.kind = 'paint'
+      gesture.lastCell = cell
+    } else if (gesture.kind === 'pan') {
       // Capture deltas before mutating the gesture: React may run the updater later.
       const deltaX = position.x - gesture.x
       const deltaY = position.y - gesture.y
@@ -400,6 +454,18 @@ export function PatternCanvas({
     if (gestureRef.current?.pointerId === event.pointerId) {
       const wasPanning = gestureRef.current.kind === 'pan'
       if (event.type === 'pointerup' && readOnly && wasPanning && gestureRef.current.lastCell) onPick(gestureRef.current.lastCell.index)
+      if (event.type === 'pointerup' && gestureRef.current.kind === 'pending-paint' && gestureRef.current.lastCell) {
+        const gesture = gestureRef.current
+        const lastCell = gesture.lastCell!
+        onEditBegin(gesture.label ?? '画笔')
+        onPaint(
+          gesture.fill
+            ? floodIndices(document.full_stitches.cells, document.grid.width, lastCell.index)
+            : [lastCell.index],
+          gesture.recipe ?? selectedRecipe,
+        )
+        onEditEnd()
+      }
       if (gestureRef.current.kind === 'paint') onEditEnd()
       gestureRef.current = null
       if (wasPanning) setPanning(false)
@@ -422,13 +488,73 @@ export function PatternCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel)
   }, [])
 
+  function revealKeyboardCell(cell: { col: number; row: number }) {
+    setViewport((current) => {
+      const size = cellSize(current)
+      const padding = Math.min(48, Math.max(18, size))
+      const left = current.offsetX + cell.col * size
+      const top = current.offsetY + cell.row * size
+      let offsetX = current.offsetX
+      let offsetY = current.offsetY
+      if (left < padding) offsetX += padding - left
+      else if (left + size > surface.width - padding) offsetX -= left + size - (surface.width - padding)
+      if (top < padding) offsetY += padding - top
+      else if (top + size > surface.height - padding) offsetY -= top + size - (surface.height - padding)
+      return offsetX === current.offsetX && offsetY === current.offsetY ? current : { ...current, offsetX, offsetY }
+    })
+  }
+
+  function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLCanvasElement>) {
+    const movement = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    }[event.key] as [number, number] | undefined
+    if (movement) {
+      event.preventDefault()
+      event.stopPropagation()
+      const next = {
+        col: Math.max(0, Math.min(document.grid.width - 1, keyboardCell.col + movement[0])),
+        row: Math.max(0, Math.min(document.grid.height - 1, keyboardCell.row + movement[1])),
+      }
+      setKeyboardCell(next)
+      onHover(next)
+      revealKeyboardCell(next)
+      return
+    }
+    // In edit mode Space remains the established temporary-pan shortcut.
+    if (event.key !== 'Enter' && (event.key !== ' ' || !readOnly)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const index = keyboardCell.row * document.grid.width + keyboardCell.col
+    if (readOnly || tool === 'pick' || tool === 'pan') {
+      onPick(index)
+      return
+    }
+    if (tool === 'select') {
+      onSelect({ startCol: keyboardCell.col, startRow: keyboardCell.row, endCol: keyboardCell.col, endRow: keyboardCell.row })
+      return
+    }
+    const recipe = tool === 'erase' ? 0 : selectedRecipe
+    onEditBegin(tool === 'fill' ? '连通填色' : tool === 'erase' ? '橡皮擦' : '画笔')
+    onPaint(tool === 'fill' ? floodIndices(document.full_stitches.cells, document.grid.width, index) : [index], recipe)
+    onEditEnd()
+  }
+
   return (
     <div ref={containerRef} className="canvas-viewport">
       <canvas
         ref={canvasRef}
         className={`pattern-canvas tool-${readOnly ? 'pan' : tool}${temporaryPan ? ' temporary-pan' : ''}${panning ? ' is-panning' : ''}`}
         aria-label={readOnly ? "十字绣图纸，拖动平移，双指缩放，点击查看线色" : "可编辑十字绣针格"}
+        aria-describedby="pattern-canvas-help"
         tabIndex={0}
+        onFocus={() => { setCanvasFocused(true); onHover(keyboardCell) }}
+        onBlur={() => {
+          setCanvasFocused(false)
+          onHover(null)
+          temporaryPanRef.current = false
+          setTemporaryPan(false)
+        }}
+        onKeyDown={handleCanvasKeyDown}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerEnd}
@@ -436,6 +562,7 @@ export function PatternCanvas({
         onLostPointerCapture={handlePointerEnd}
         onPointerLeave={() => onHover(null)}
       />
+      <p className="sr-only" id="pattern-canvas-help" aria-live="polite">使用方向键移动针格，{readOnly ? '按 Enter 或空格查看当前线色' : '按 Enter 执行当前工具，按住空格拖动图纸'}。当前第 {keyboardCell.col + 1} 列，第 {keyboardCell.row + 1} 行。</p>
     </div>
   )
 }

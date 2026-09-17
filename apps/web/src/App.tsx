@@ -5,6 +5,7 @@ import { useProjectDraft } from './hooks/useProjectDraft'
 import { useGeneration } from './hooks/useGeneration'
 import { AccountPanel } from './components/AccountPanel'
 import { DownloadPanel } from './components/DownloadPanel'
+import { BlankProjectDialog } from './components/BlankProjectDialog'
 import type { User } from './lib/account'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { PatternCanvas } from './components/PatternCanvas'
@@ -77,11 +78,19 @@ function App({ user, onLogout, onAccountRefresh }: {
   const LAST_PROJECT_KEY = `stitchforge.lastProjectId.${user.user_id}`
   const [accountOpen, setAccountOpen] = useState(() => window.location.hash.startsWith('#billing'))
   const [downloadOpen, setDownloadOpen] = useState(false)
+  const [blankOpen, setBlankOpen] = useState(false)
   const [editor, dispatch] = useReducer(editorReducer, undefined, () => createEditor(makeDemoPattern()))
   const { document } = editor
   const dirty = isDirty(editor)
   const [libraryOpen, setLibraryOpen] = useState(() => window.location.hash === '#library' || !window.localStorage.getItem(LAST_PROJECT_KEY))
   const [libraryBusy, setLibraryBusy] = useState(false)
+  const [mobileCreateOpen, setMobileCreateOpen] = useState(false)
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false)
+  const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia('(max-width: 620px)').matches)
+  const mobileCreateButtonRef = useRef<HTMLButtonElement>(null)
+  const mobileCreateSheetRef = useRef<HTMLElement>(null)
+  const mobileInspectorToggleRef = useRef<HTMLButtonElement>(null)
+  const mobileInspectorRef = useRef<HTMLElement>(null)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [highlightedRecipe, setHighlightedRecipe] = useState<number | null>(null)
   const [showSymbols, setShowSymbols] = useState(true)
@@ -89,6 +98,7 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [tool, setTool] = useState<Tool>('paint')
   const [selectedRecipe, setSelectedRecipe] = useState(1)
   const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null)
+  const [pickedCell, setPickedCell] = useState<{ col: number; row: number; projectId: string | null } | null>(null)
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [createState, setCreateState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [saveState, setSaveState] = useState<'idle' | 'loading' | 'error'>('idle')
@@ -106,6 +116,8 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importState, setImportState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const importDialogRef = useRef<HTMLElement>(null)
+  const importBusyRef = useRef(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [conversionSummary, setConversionSummary] = useState<ImageConversionResponse | null>(null)
   const [restoreState, setRestoreState] = useState<'idle' | 'loading' | 'error'>(() =>
@@ -115,6 +127,95 @@ function App({ user, onLogout, onAccountRefresh }: {
   useEffect(() => {
     window.history.replaceState(null, '', libraryOpen ? '#library' : '#pattern')
   }, [libraryOpen])
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 620px)')
+    function updateMobileLayout(event: MediaQueryListEvent) {
+      setMobileLayout(event.matches)
+      if (!event.matches) {
+        closeMobileCreate(false)
+        setMobileInspectorOpen(false)
+      }
+    }
+    media.addEventListener('change', updateMobileLayout)
+    return () => media.removeEventListener('change', updateMobileLayout)
+  }, [])
+
+  function closeMobileInspector(restoreFocus = true) {
+    setMobileInspectorOpen(false)
+    if (restoreFocus) window.requestAnimationFrame(() => mobileInspectorToggleRef.current?.focus())
+  }
+
+  function closeMobileCreate(restoreFocus = true) {
+    setMobileCreateOpen(false)
+    if (restoreFocus) window.requestAnimationFrame(() => mobileCreateButtonRef.current?.focus())
+  }
+
+  useEffect(() => {
+    if (!mobileLayout || !mobileInspectorOpen) return
+    const panel = mobileInspectorRef.current
+    panel?.querySelector<HTMLElement>('button')?.focus()
+    function keepFocusInside(event: KeyboardEvent) {
+      if (event.key !== 'Tab' || !panel) return
+      const focusable = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled)')]
+      const first = focusable[0]
+      const last = focusable.at(-1)
+      if (!first || !last) return
+      if (!panel.contains(window.document.activeElement) || (event.shiftKey && window.document.activeElement === first)) {
+        event.preventDefault(); (event.shiftKey ? last : first).focus()
+      } else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.document.addEventListener('keydown', keepFocusInside)
+    return () => window.document.removeEventListener('keydown', keepFocusInside)
+  }, [mobileLayout, mobileInspectorOpen])
+
+  useEffect(() => {
+    if (!mobileCreateOpen) return
+    const sheet = mobileCreateSheetRef.current
+    sheet?.querySelector<HTMLElement>('button')?.focus()
+    function keepFocusInside(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMobileCreate()
+        return
+      }
+      if (event.key !== 'Tab' || !sheet) return
+      const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not(:disabled)')]
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && window.document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.document.addEventListener('keydown', keepFocusInside)
+    return () => {
+      window.document.removeEventListener('keydown', keepFocusInside)
+    }
+  }, [mobileCreateOpen])
+
+  useEffect(() => { importBusyRef.current = importState === 'loading' }, [importState])
+  useEffect(() => {
+    if (!importOpen) return
+    const previousFocus = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
+    const dialog = importDialogRef.current
+    dialog?.querySelector<HTMLElement>('input, button')?.focus()
+    function keepFocusInside(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!importBusyRef.current) setImportOpen(false)
+        return
+      }
+      if (event.key !== 'Tab' || !dialog) return
+      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]')]
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && window.document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.document.addEventListener('keydown', keepFocusInside)
+    return () => { window.document.removeEventListener('keydown', keepFocusInside); previousFocus?.focus() }
+  }, [importOpen])
 
   const palette = useMemo(() => {
     const materials = new Map(document.materials.map((item) => [item.id, item]))
@@ -128,11 +229,13 @@ function App({ user, onLogout, onAccountRefresh }: {
   const recipeCounts = editor.recipeCounts
   const rareColorSummary = document.extensions?.['stitchforge.rare_colors'] as RareColorSummary | undefined
 
-  const hoveredRecipeIndex = hoveredCell ? document.full_stitches.cells[hoveredCell.row * document.grid.width + hoveredCell.col] : null
+  const activeCell = hoveredCell ?? (pickedCell?.projectId === (session?.projectId ?? null) ? pickedCell : null)
+  const hoveredRecipeIndex = activeCell ? document.full_stitches.cells[activeCell.row * document.grid.width + activeCell.col] : null
   const hoveredMaterial = palette.find((recipe) => recipe.index === hoveredRecipeIndex)?.material
   const planningReport = conversionSummary?.planning_report ??
     (document.extensions?.['stitchforge.import_plan'] as ImageConversionResponse['planning_report'] | undefined)
   const embeddedOxsPalette = (document.provenance as { catalog_snapshot_id?: string } | undefined)?.catalog_snapshot_id === 'oxs_embedded_palette'
+  const basicPalette = document.materials.length > 0 && document.materials.every(material => material.brand === '自定义' && material.id.startsWith('m_basic_'))
 
   useEffect(() => {
     if (highlightedRecipe === null || mode !== 'view') return
@@ -143,7 +246,11 @@ function App({ user, onLogout, onAccountRefresh }: {
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       const target = event.target
-      if (downloadOpen || accountOpen || libraryOpen || importOpen || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
+      if (event.key === 'Escape' && mobileInspectorOpen) {
+        closeMobileInspector()
+        return
+      }
+      if (downloadOpen || accountOpen || blankOpen || mobileInspectorOpen || libraryOpen || importOpen || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return
       if (event.altKey) return
       const key = event.key.toLowerCase()
@@ -227,6 +334,7 @@ function App({ user, onLogout, onAccountRefresh }: {
   }, [])
 
   function pickCell(index: number) {
+    setPickedCell({ col: index % document.grid.width, row: Math.floor(index / document.grid.width), projectId: session?.projectId ?? null })
     const recipe = document.full_stitches.cells[index]
     if (mode === 'view') {
       setHighlightedRecipe(recipe > 0 ? recipe : null)
@@ -240,6 +348,7 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   function showLibrary() {
     if (dirty && !window.confirm('当前图纸有未保存修改，返回图纸库？重新打开时将尝试恢复本地草稿。')) return
+    setMobileInspectorOpen(false)
     setLibraryOpen(true)
   }
 
@@ -272,20 +381,26 @@ function App({ user, onLogout, onAccountRefresh }: {
     setSourceFullView(true)
     setMode('view')
     setFitRequest((value) => value + 1)
+    setMobileInspectorOpen(false)
     setLibraryOpen(false)
   }
 
-  async function startBlankProject() {
+  function requestBlankProject() {
     if (dirty && !window.confirm('当前图纸有未保存修改，继续新建图纸？重新打开时将尝试恢复本地草稿。')) return
+    setBlankOpen(true)
+  }
+
+  async function startBlankProject(name: string, width: number, height: number) {
     const epoch = ++operationEpoch.current
     setCreateState('loading')
     try {
-      const created = await createProject('未命名图纸')
+      const created = await createProject(name, { width, height })
       if (epoch !== operationEpoch.current) return
       setDraftConflict(false)
       dispatch({ type: 'reset', document: created.initial_revision.document })
       setHighlightedRecipe(null)
-      setSelectedRecipe(0)
+      setSelectedRecipe(created.initial_revision.document.recipes[0]?.index ?? 0)
+      setTool('paint')
       setSelection(null)
       setSourceImageUrl(null)
       setImportNotice(null)
@@ -297,13 +412,15 @@ function App({ user, onLogout, onAccountRefresh }: {
         headRevisionId: created.initial_revision.revision_id,
       })
       window.localStorage.setItem(LAST_PROJECT_KEY, created.project.project_id)
-      setMode('view')
+      setMode('edit')
       setHoveredCell(null)
       setFitRequest((value) => value + 1)
       setLibraryOpen(false)
       setCreateState('idle')
-    } catch {
+      setBlankOpen(false)
+    } catch (error) {
       setCreateState('error')
+      throw error
     }
   }
 
@@ -311,7 +428,9 @@ function App({ user, onLogout, onAccountRefresh }: {
     event.preventDefault()
     const file = new FormData(event.currentTarget).get('image')
     if (!(file instanceof File) || file.size === 0) { setImportError('请选择文件'); return }
-    if (dirty && !window.confirm('当前修改已保留在本地草稿，继续导入新图纸？')) return
+    if (dirty && !window.confirm(projectDraft.status.includes('失败')
+      ? '本地草稿保存失败，继续导入会丢失未保存修改。建议取消并先保存版本，仍要继续？'
+      : '当前图纸有未保存修改，继续导入新图纸？重新打开时将尝试恢复本地草稿。')) return
     const epoch = ++operationEpoch.current
     setImportState('loading')
     setImportError(null)
@@ -378,7 +497,9 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   async function openGeneratedProject() {
     if (!generation.job || generation.job.state !== 'SUCCEEDED') return
-    if (dirty && !window.confirm('当前修改已保留在本地草稿，打开生成图纸？')) return
+    if (dirty && !window.confirm(projectDraft.status.includes('失败')
+      ? '本地草稿保存失败，打开其他图纸会丢失未保存修改。建议取消并先保存版本，仍要继续？'
+      : '当前图纸有未保存修改，打开生成图纸？重新打开时将尝试恢复本地草稿。')) return
     await openLibraryProject(generation.job.project_id)
     generation.acknowledge()
     void onAccountRefresh()
@@ -459,8 +580,8 @@ function App({ user, onLogout, onAccountRefresh }: {
   }
 
   return (
-    <main className="workbench-shell">
-      <header className="app-header">
+    <><a className="skip-link" href="#main-content" inert={mobileLayout && mobileInspectorOpen}>跳到主要内容</a><main id="main-content" className={`workbench-shell${libraryOpen ? ' library-open' : ''}`}>
+      <header className={`app-header${libraryOpen ? ' library-app-header' : ''}`} inert={mobileLayout && mobileInspectorOpen}>
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">SF</span>
           <div>
@@ -472,10 +593,14 @@ function App({ user, onLogout, onAccountRefresh }: {
           <strong>{libraryOpen ? '图纸库' : document.metadata.title}</strong>
           <span>{libraryOpen ? '管理你的所有作品' : dirty ? '有未保存修改' : session ? '已保存到账号' : '示例预览'}</span>
         </div>
+        <div className="mobile-document-title">
+          <h1>{libraryOpen ? '我的图纸' : document.metadata.title}</h1>
+          <span>{libraryOpen ? '作品库' : `${document.grid.width} × ${document.grid.height} 格 · ${dirty ? '未保存' : session ? '已保存' : '预览'}`}</span>
+        </div>
         <div className="header-actions">
           <button className="quiet-button account-button" type="button" disabled={importState === 'loading'} onClick={() => setAccountOpen(true)}>
             <IconCredit aria-hidden="true" />
-            <span>{user.credits} 次 / 账号</span>
+            <span>{user.credits} 次<span className="account-label-suffix"> / 账号</span></span>
           </button>
           {!libraryOpen && <button className="quiet-button" type="button" disabled={saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || !!editor.active} onClick={showLibrary}>
             <IconFolder aria-hidden="true" />
@@ -486,24 +611,36 @@ function App({ user, onLogout, onAccountRefresh }: {
           )}
           {restoreState === 'loading' && <span className="restore-state">正在恢复上次图纸…</span>}
           {restoreState === 'error' && <span className="api-error">上次图纸无法打开</span>}
-          <button className="quiet-button" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'} onClick={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}>
+          <button className="quiet-button library-create-action" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'} onClick={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}>
             <IconSparkles aria-hidden="true" />
             <span>导入图片</span>
           </button>
-          <button className="quiet-button" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
+          <button className="quiet-button library-create-action" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
             onClick={() => { setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>
             <IconFileCode aria-hidden="true" />
-            <span>OXS 免费导入</span>
+            <span>导入 OXS</span>
           </button>
           <button
-            className="quiet-button new-project-button"
+            className="quiet-button new-project-button library-create-action"
             type="button"
-            onClick={startBlankProject}
+            onClick={requestBlankProject}
             disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
           >
             <IconPlus aria-hidden="true" />
             <span>{createState === 'loading' ? '创建中…' : '新建图纸'}</span>
           </button>
+          {libraryOpen && <button
+            ref={mobileCreateButtonRef}
+            className="primary-button mobile-create-button"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={mobileCreateOpen}
+            disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
+            onClick={() => setMobileCreateOpen(true)}
+          >
+            <IconPlus aria-hidden="true" />
+            <span>创建图纸</span>
+          </button>}
           {!libraryOpen && mode === 'edit' && <button
             className="primary-button"
             type="button"
@@ -521,13 +658,17 @@ function App({ user, onLogout, onAccountRefresh }: {
         </div>
       </header>
 
-      <div className="workbench-notices">
+      <div className="workbench-notices" inert={mobileLayout && mobileInspectorOpen}>
+      {projectDraft.status.includes('失败') && <p className="draft-status api-error" role="alert">{projectDraft.status}</p>}
       {(generation.pending || generation.status || generation.error) && <div className="generation-status" role="status">
         <span>{generation.status}</span>
         {generation.error && <span className="api-error">{generation.error}</span>}
         {generation.job?.state === 'SUCCEEDED' && <button type="button" onClick={() => { void openGeneratedProject().catch(error => setSaveError(String(error))) }}>打开生成图纸</button>}
-        {generation.pending && generation.job?.state !== 'SUCCEEDED' && <button type="button" disabled={generation.uploading || generation.job?.state === 'CANCEL_REQUESTED'} onClick={() => { void generation.cancel() }}>取消生成</button>}
-        {generation.pending && generation.error && <button type="button" onClick={generation.retry}>继续查询</button>}
+        {generation.pending && generation.canAbandon && <button type="button" disabled={generation.uploading || generation.abandoning} onClick={() => {
+          if (window.confirm('放弃本次未完成的上传？空白占位图纸将移入回收站，已完成的生成结果会保留。')) void generation.abandonUpload()
+        }}>{generation.abandoning ? '正在确认…' : '放弃本次上传'}</button>}
+        {generation.pending && !generation.canAbandon && generation.job?.state !== 'SUCCEEDED' && <button type="button" disabled={generation.uploading || generation.abandoning || generation.job?.state === 'CANCEL_REQUESTED'} onClick={() => { void generation.cancel() }}>取消生成</button>}
+        {generation.pending && generation.error && <button type="button" disabled={generation.uploading || generation.abandoning} onClick={generation.retry}>继续查询</button>}
         {!generation.pending && <button type="button" onClick={generation.acknowledge}>关闭提示</button>}
       </div>}
       {saveError && <p className="draft-status api-error" role="alert">{saveError}</p>}
@@ -544,13 +685,18 @@ function App({ user, onLogout, onAccountRefresh }: {
             window.localStorage.removeItem(LAST_PROJECT_KEY)
           }
         }}
-        onRenamed={(id, name, head) => {
+        onRenamed={(id, name, head, previousHead) => {
           if (session?.projectId === id) {
-            setSession({ projectId: id, headRevisionId: head })
-            dispatch({ type: 'reset', document: { ...document, metadata: { ...document.metadata, title: name } } })
+            if (session.headRevisionId === previousHead) {
+              setSession({ projectId: id, headRevisionId: head })
+              dispatch({ type: 'rename', title: name })
+            } else {
+              // A rename based on a newer server version must not rebase stale cells.
+              setDraftConflict(true)
+            }
           }
         }} /> : <section className="workspace-grid">
-        <aside className="tool-rail" aria-label="绘图工具">
+        <aside className="tool-rail" aria-label="绘图工具" inert={mobileLayout && mobileInspectorOpen}>
           {mode === 'view' ? <div className="view-help"><strong>看图</strong><p>点击针格查线色</p><p>拖动平移<br />双指缩放</p></div> : TOOLS.map((item) => {
             const ToolIcon = TOOL_ICONS[item.id]
             return (
@@ -569,12 +715,13 @@ function App({ user, onLogout, onAccountRefresh }: {
           })}
         </aside>
 
-        <section className="canvas-stage" aria-label="图纸编辑区">
+        <section className="canvas-stage" aria-label="图纸编辑区" inert={mobileLayout && mobileInspectorOpen}>
           <div className="canvas-toolbar">
             <div className="view-tabs" aria-label="视图模式">
               <button
                 className={viewMode === 'pattern' ? 'active' : ''}
                 type="button"
+                aria-pressed={viewMode === 'pattern'}
                 onClick={() => setViewMode('pattern')}
               >
                 针格
@@ -582,6 +729,7 @@ function App({ user, onLogout, onAccountRefresh }: {
               <button
                 className={viewMode === 'source' ? 'active' : ''}
                 type="button"
+                aria-pressed={viewMode === 'source'}
                 disabled={!sourceImageUrl}
                 onClick={() => setViewMode('source')}
               >
@@ -597,6 +745,17 @@ function App({ user, onLogout, onAccountRefresh }: {
               <span>{document.fabric.count} CT</span>
               <span>{document.recipes.length} 色</span>
             </div>
+            <button
+              ref={mobileInspectorToggleRef}
+              className="mobile-inspector-toggle"
+              type="button"
+              aria-controls="pattern-inspector"
+              aria-expanded={mobileInspectorOpen}
+              onClick={() => setMobileInspectorOpen((current) => !current)}
+            >
+              <span aria-hidden="true" className="mobile-thread-dot" style={{ background: palette.find((recipe) => recipe.index === (mode === 'view' ? highlightedRecipe : selectedRecipe))?.material?.color.display_srgb ?? '#B9BEC7' }} />
+              线色与信息
+            </button>
           </div>
           <div className="edit-toolbar" role="toolbar" aria-label="查看和编辑操作">
             <div className="mode-tabs">
@@ -658,15 +817,23 @@ function App({ user, onLogout, onAccountRefresh }: {
             </section>
           </div>
           <div className="status-bar">
-            <span>{hoveredCell ? `列 ${hoveredCell.col + 1}，行 ${hoveredCell.row + 1}` : '点击或移动到针格查看坐标'}</span>
-            {projectDraft.status ? <span role="status">{projectDraft.status}</span> : <span>{mode === 'view' ? '点击查线色 · 拖动平移 · 滚轮缩放' : '滚轮缩放 · 按住空格拖动 · 中键平移'}{showSymbols ? ' · 放大查看符号' : ''}</span>}
+            <span>{activeCell ? `列 ${activeCell.col + 1}，行 ${activeCell.row + 1}` : '点击或移动到针格查看坐标'}</span>
+            {projectDraft.status ? <span role="status">{projectDraft.status}</span> : <span className="interaction-hint">{mode === 'view' ? '点击查线色 · 拖动平移 · 滚轮缩放' : '滚轮缩放 · 按住空格拖动 · 中键平移'}{showSymbols ? ' · 放大查看符号' : ''}</span>}
           </div>
         </section>
 
-        <aside className="inspector">
+        {mobileInspectorOpen && <button className="mobile-inspector-backdrop" type="button" tabIndex={-1} aria-label="关闭线色与信息" onClick={() => closeMobileInspector()} />}
+        <aside ref={mobileInspectorRef} id="pattern-inspector" className={`inspector${mobileInspectorOpen ? ' is-mobile-open' : ''}`} aria-label="线色与图纸信息"
+          role={mobileLayout ? 'dialog' : undefined} aria-modal={mobileLayout && mobileInspectorOpen ? true : undefined}
+          aria-hidden={mobileLayout && !mobileInspectorOpen ? true : undefined} inert={mobileLayout && !mobileInspectorOpen}>
+          <div className="mobile-inspector-heading">
+            <span aria-hidden="true" />
+            <div><strong>线色与图纸信息</strong><small>{mode === 'view' ? '选择线色以高亮针格' : '选择线色后继续绘制'}</small></div>
+            <button type="button" aria-label="关闭线色与信息" onClick={() => closeMobileInspector()}>×</button>
+          </div>
           <section className="inspector-section current-cell-panel" aria-label="实时针格信息">
             <div className="section-heading"><h2>针格信息</h2><span>{mode === 'view' ? '查看' : '编辑'}</span></div>
-            <div className="live-cell-position">{hoveredCell ? `列 ${hoveredCell.col + 1} · 行 ${hoveredCell.row + 1}` : '点击针格查看线色'}</div>
+            <div className="live-cell-position">{activeCell ? `列 ${activeCell.col + 1} · 行 ${activeCell.row + 1}` : '点击针格查看线色'}</div>
             <p>{hoveredRecipeIndex === null ? '坐标与线色会实时显示在这里' : hoveredRecipeIndex === 0 ? '空白针格' : `${hoveredMaterial?.brand ?? 'DMC'} ${hoveredMaterial?.code ?? '未知'} · ${hoveredMaterial?.name ?? ''}`}</p>
             {selection && <span className="selection-count">已选 {(selection.endCol - selection.startCol + 1) * (selection.endRow - selection.startRow + 1)} 格</span>}
           </section>
@@ -690,6 +857,7 @@ function App({ user, onLogout, onAccountRefresh }: {
                       setSelectedRecipe(recipe.index)
                       setTool('paint')
                     }
+                    if (mobileLayout) closeMobileInspector()
                   }}
                 >
                   <span
@@ -741,7 +909,7 @@ function App({ user, onLogout, onAccountRefresh }: {
               <div><dt>绣布规格</dt><dd>{document.fabric.count} CT</dd></div>
               <div><dt>色差方法</dt><dd>CIEDE2000</dd></div>
               <div><dt>邻域规则</dt><dd>4 邻域</dd></div>
-              <div><dt>色库来源</dt><dd>{embeddedOxsPalette ? 'OXS 内置线色' : 'DMC 2021 近似色'}</dd></div>
+              <div><dt>色库来源</dt><dd>{embeddedOxsPalette ? 'OXS 内置线色' : basicPalette ? '基础自定义颜色（非实体色卡）' : 'DMC 2021 近似色'}</dd></div>
               {conversionSummary && (
                 <>
                   <div>
@@ -770,9 +938,32 @@ function App({ user, onLogout, onAccountRefresh }: {
           </section>
         </aside>
       </section>}
+      {mobileCreateOpen && (
+        <div className="mobile-create-backdrop" role="presentation" onPointerDown={(event) => {
+          if (event.target === event.currentTarget) closeMobileCreate()
+        }}>
+          <section ref={mobileCreateSheetRef} className="mobile-create-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-create-title">
+            <div className="mobile-create-heading">
+              <div><h2 id="mobile-create-title">创建图纸</h2><p>选择最适合你的开始方式</p></div>
+              <button type="button" aria-label="关闭创建菜单" onClick={() => closeMobileCreate()}>×</button>
+            </div>
+            <div className="mobile-create-options">
+              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('image'); setImportError(null); setImportOpen(true) }}>
+                <IconSparkles aria-hidden="true" /><span><strong>图片生成</strong><small>上传照片或插画 · 消耗 1 次</small></span>
+              </button>
+              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>
+                <IconFileCode aria-hidden="true" /><span><strong>导入 OXS</strong><small>保留已有针格和线色 · 免费</small></span>
+              </button>
+              <button type="button" onClick={() => { closeMobileCreate(false); requestBlankProject() }}>
+                <IconPlus aria-hidden="true" /><span><strong>空白图纸</strong><small>从一张空白针格开始</small></span>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {importOpen && (
         <div className="import-backdrop" role="presentation">
-          <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
+          <section ref={importDialogRef} className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
             <div className="import-heading">
               <div>
                 <h2 id="import-title">{importKind === 'oxs' ? '导入 OXS 图纸' : '从图片自动生成图纸'}</h2>
@@ -795,9 +986,9 @@ function App({ user, onLogout, onAccountRefresh }: {
                 <input name="image" type="file" accept={importKind === 'oxs' ? '.oxs' : 'image/png,image/jpeg'} required disabled={importState === 'loading'} />
                 <small>{importKind === 'oxs' ? 'OXS，最大 16 MiB' : 'JPG 或 PNG，最大 20 MiB'}</small>
               </label>
-              {importKind === 'image' && <p className="import-explanation">生成成功并保存后扣 1 次，失败不扣次数。生成后可查看方案参数。</p>}
+              {importKind === 'image' && <p className="import-explanation">生成成功并保存后扣 1 次，失败不扣次数。根据服务配置，原图可能发送给受托模型服务商进行结构分析；详见 <a href="/privacy.html" target="_blank" rel="noopener">隐私政策</a>。</p>}
               {importState === 'loading' && <p role="status">{importKind === 'oxs' ? '正在读取图纸…' : '正在分析图片并生成图纸，请稍候…'}</p>}
-              {importError && <p className="import-error">{importError}</p>}
+              {importError && <p className="import-error" role="alert">{importError}</p>}
               <div className="import-actions">
                 <button type="button" disabled={importState === 'loading'} onClick={() => setImportOpen(false)}>
                   取消
@@ -810,13 +1001,14 @@ function App({ user, onLogout, onAccountRefresh }: {
           </section>
         </div>
       )}
+      {blankOpen && <BlankProjectDialog onCreate={startBlankProject} onClose={() => setBlankOpen(false)} />}
       {downloadOpen && <DownloadPanel title={document.metadata.title} dirty={dirty}
         onPrepare={prepareDownload} onClose={() => setDownloadOpen(false)} />}
       {accountOpen && <AccountPanel user={user} onClose={() => setAccountOpen(false)} onRefresh={onAccountRefresh} onLogout={async () => {
         if (dirty && !window.confirm('图纸有未保存修改，确定退出登录？')) return
         await onLogout()
       }} />}
-    </main>
+    </main></>
   )
 }
 

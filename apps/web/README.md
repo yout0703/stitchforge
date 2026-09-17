@@ -18,6 +18,8 @@ pnpm build
 
 底部状态栏显示草稿保存状态。服务器版本变化时保留本地修改，可选择“另存为新图纸”或“载入服务器版本”；加载失败不会删除本地草稿。浏览器存储不可用时显示错误，不把未落盘内容标成已保存。
 
+新建空白图纸可设置 1–600 格的宽高，默认 64×64，附带 8 种自定义数字基础配色（不对应实体品牌绣线），创建后直接进入编辑。重命名保留当前草稿与撤销历史。手机点选针格后坐标和线色持续显示，切换原图保留缩放位置，线色面板支持焦点循环与 Esc 关闭。
+
 快捷键：⌘/Ctrl+Z 撤销，⌘/Ctrl+Shift+Z 或 Ctrl+Y 重做，⌘/Ctrl+S 保存，⌘/Ctrl+A 全选，Delete/Backspace 清空选区，Esc 取消选区。输入框内保留原生快捷键，关闭含未保存修改的页面会提示。
 
 浏览器交互回归（需要先启动前端及本机安装 Chrome）：
@@ -25,12 +27,16 @@ pnpm build
 ```bash
 cd ../..
 uv run --with playwright python tools/check_web_viewport.py
+uv run --with playwright python tools/check_web_mobile.py
 uv run --with playwright python tools/check_web_editing.py
 uv run --with playwright python tools/check_web_recovery.py
 uv run --with playwright python tools/check_web_generation.py
+uv run --with playwright python tools/check_canvas_review_fixes.py
+uv run --with playwright python tools/check_review_mobile_fixes.py
+uv run --with playwright python tools/check_review_recovery_fixes.py
 ```
 
-使用隔离浏览器和模拟接口，验证页面高度、空格连续拖动与跨边界拖动、滚轮缩放及原图滚动到底部，不修改本机项目。
+使用隔离浏览器和模拟接口，验证页面高度、空格连续拖动与跨边界拖动、滚轮缩放、原图滚动到底部，以及 390/430 像素手机视口下的操作区、底部线色面板、触控尺寸和导入弹层，不修改本机项目。
 
 图片导入无需填写参数。通过项目根目录 `.env` 中的 `STITCHFORGE_AI_PROVIDER=deepseek` 和 `DEEPSEEK_API_KEY` 接入 DeepSeek-V4.1-Flash（API 模型名 `deepseek-flash`），验证结构化建议后生成图纸；不可用、超时或建议无效时自动使用本地方案。配置与切换说明见 [AI 图片分析](../../docs/ai-analysis.md)。CT/股数为制作建议，既有针格的精确恢复仍需专门的网格检测。分析依据随版本保存，右侧可查看。仅在使用 `STITCHFORGE_AI_PROVIDER=codex` 时调用本机 Codex CLI；设置 `STITCHFORGE_CODEX_ENABLED=0` 可关闭 CLI，`STITCHFORGE_CODEX_TIMEOUT` 控制超时秒数（默认 60），`STITCHFORGE_CODEX_MODEL` 可指定模型。
 
@@ -51,6 +57,8 @@ Codex 调用按[官方非交互执行文档](https://developers.openai.com/codex
 默认持久化位置是项目根目录下 `.stitchforge-data/metadata.sqlite3`，原图等素材存放在 `.stitchforge-data/artifacts/`，可通过 `STITCHFORGE_DATA_DIR` 调整。备份时停止后端并复制整个数据目录，包括可能存在的 SQLite WAL 文件，不要只复制单个数据库文件。已保存作品由后端持久保存；浏览器按账号隔离保存最近项目、待查询生成请求和 IndexedDB 编辑草稿。本地草稿依赖当前浏览器存储，不跨设备同步。
 
 图片提交后进入持久队列，显示阶段状态并可取消。刷新会继续查询已提交任务；完成后可打开结果，不覆盖期间的新编辑。上传响应丢失时重新选择同一文件可复用请求标识。`uv run stitchforge-api` 默认启动 worker；运行参数与恢复边界见[架构优化说明](../../docs/architecture-optimization-2026-09-13.md)。
+
+查询确认没有任务时，可“放弃本次上传”再选择其他图片：客户端重新查任务，并以初始版本号为条件将空白占位图纸移入回收站，阻止延迟上传继续入队。断网或版本冲突时保留记录，不丢弃可能完成的结果。微信/支付宝已有订单跨设备切换入口受渠道限制时明确提示回原设备继续或查单，不引导重复购买；Stripe 使用渠道实际到期时间。
 
 `tools/check_web_imports.py` 同时覆盖图纸库搜索、排序、分页、重命名和刷新恢复、回收站、独立图片导入、失败保护、未保存修改提示及窄屏固定顶栏。
 

@@ -122,7 +122,7 @@ export function AccountPanel({ user, onClose, onLogout, onRefresh }: {
       <section className="account-section" aria-labelledby="orders-title">
       <h3 id="orders-title">最近订单</h3>
       {billing.orders.length === 0 ? <p className="account-empty">暂无充值订单</p> : <ul className="credit-history">{billing.orders.map(order => <li key={order.order_id} className="credit-order"><div><span>{order.credits} 次 · {money(order.amount_minor, order.currency)} · {new Date(order.created_at_ms).toLocaleDateString('zh-CN')}</span><strong>{order.status === 'paid' ? '已到账' : '待付款'}</strong></div>
-        {order.status === 'pending' && <div className="order-actions"><button disabled={busy} onClick={() => void sync(order.order_id)}>查询到账</button>{order.payment_provider && <button disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await startCheckout(order.order_id, order.payment_provider!, order.payment_device ?? 'desktop') } catch (reason) { setError(reason instanceof Error ? reason.message : '无法继续支付') } finally { setBusy(false) } }}>继续支付</button>}</div>}
+        {order.status === 'pending' && <div className="order-actions"><button disabled={busy} onClick={() => void sync(order.order_id)}>查询到账</button>{order.payment_provider && <button disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await startCheckout(order.order_id, order.payment_provider!, isMobile() ? 'mobile' : 'desktop') } catch (reason) { setError(reason instanceof Error ? reason.message : '无法继续支付') } finally { setBusy(false) } }}>继续支付</button>}</div>}
       </li>)}</ul>}
       </section>
       <section className="account-section" aria-labelledby="ledger-title">
@@ -131,6 +131,7 @@ export function AccountPanel({ user, onClose, onLogout, onRefresh }: {
       </section>
     </>}
     </div>
+    <div className="account-panel-legal"><a href="/terms.html" target="_blank">服务条款</a><span>·</span><a href="/privacy.html" target="_blank">隐私政策</a><span>充值次数不等同储值余额</span></div>
     <div className="account-panel-footer"><button className="quiet-button" disabled={busy || refreshing} onClick={() => void reload()}>{refreshing ? '刷新中…' : '刷新记录'}</button><button className="quiet-button" disabled={busy} onClick={async () => {
       setBusy(true)
       try { await onLogout() } catch { setError('退出失败，请重试') } finally { setBusy(false) }

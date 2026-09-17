@@ -36,8 +36,8 @@ def test_library_pagination_search_sort_and_workspace_isolation(tmp_path):
             items = client.get("/api/v1/projects", params={"search": search}).json()["items"]
             assert len(items) == (0 if search.startswith("'") else 1)
         assert "document" not in first["items"][0]
-        assert first["items"][0]["width"] == 1
-        assert first["items"][0]["color_count"] == 0
+        assert first["items"][0]["width"] == 64
+        assert first["items"][0]["color_count"] == 8
         assert first["items"][0]["source_kind"] == "blank"
         created_order = client.get("/api/v1/projects?sort=created").json()["items"]
         assert created_order[0]["name"] == "a needle"

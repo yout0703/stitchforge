@@ -286,11 +286,16 @@ def test_stripe_checkout_and_async_webhook_never_credit_unpaid_session(monkeypat
 
     def create(params, options):
         calls.append((params, options))
-        return SimpleNamespace(id="cs_test", url="https://checkout.stripe.com/test")
+        return SimpleNamespace(
+            id="cs_test",
+            url="https://checkout.stripe.com/test",
+            expires_at=params["expires_at"],
+        )
 
     monkeypatch.setattr(provider.client.v1.checkout.sessions, "create", create)
     checkout = provider.checkout({**PACK, "currency": "USD"}, attempt, "hosted", "127.0.0.1")
     assert checkout["session_id"] == "cs_test"
+    assert checkout["expires_at_ms"] == calls[0][0]["expires_at"] * 1000
     assert calls[0][0]["line_items"][0]["price_data"]["unit_amount"] == 100
     assert calls[0][1]["idempotency_key"] == "checkout-international-order"
     session = {

@@ -1,0 +1,10 @@
+{
+  "name": "StitchForge 十字绣打版工作台",
+  "short_name": "StitchForge",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ece8e1",
+  "theme_color": "#ece8e1",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
