@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any
 
+import numpy as np
+
 from .imaging import GridSample
-from .optimize import _neighbors, _recipe_labs
+from .optimize import _component_map, _neighbors, _recipe_labs, _region_policies
 from .palette import delta_e_2000_lab, srgb_hex_to_lab
 from .validation import validate_document
 
@@ -16,6 +18,205 @@ from .validation import validate_document
 class RareColorResult:
     document: dict[str, Any]
     report: dict[str, Any]
+
+
+def normalize_rendered_stitch_palette(
+    document: dict[str, Any],
+    sample: GridSample,
+    *,
+    max_component_size: int = 3,
+    max_delta_e00: float = 10.0,
+    max_error_increase: float = 4.0,
+    max_mean_error_increase: float = 3.0,
+    min_neighbor_fraction: float = 0.5,
+    max_rounds: int = 3,
+) -> RareColorResult:
+    """Absorb tiny lighting fragments without changing the stitched silhouette.
+
+    A component is changed only when it is internal, unprotected, surrounded by
+    one more-common neighboring material, close in thread color, and still fits
+    the sampled source nearly as well. Large regions and distinct accent colors
+    therefore remain available even when they use only a few stitches.
+    """
+    validate_document(document).raise_for_errors()
+    width, height = document["grid"]["width"], document["grid"]["height"]
+    if (width, height) != (sample.width, sample.height):
+        raise ValueError("目标网格与 PatternDocument 尺寸不一致")
+    if (
+        not isinstance(max_component_size, int)
+        or not 1 <= max_component_size <= 8
+        or not isfinite(max_delta_e00)
+        or not 0 <= max_delta_e00 <= 20
+        or not isfinite(max_error_increase)
+        or not 0 <= max_error_increase <= 10
+        or not isfinite(max_mean_error_increase)
+        or not 0 <= max_mean_error_increase <= 10
+        or not isfinite(min_neighbor_fraction)
+        or not 0.5 <= min_neighbor_fraction <= 1
+        or not isinstance(max_rounds, int)
+        or not 1 <= max_rounds <= 5
+    ):
+        raise ValueError("成品绣片线色归一化参数超出有效范围")
+
+    optimized = deepcopy(document)
+    cells = optimized["full_stitches"]["cells"]
+    occupancy = tuple(bool(cell) for cell in cells)
+    colors_before = len(set(cells) - {0})
+    locked, policy_weights = _region_policies(optimized)
+    protected = {
+        offset
+        for offset, (is_locked, weight) in enumerate(zip(locked, policy_weights, strict=True))
+        if is_locked or weight > 1
+    }
+    recipes = {recipe["index"]: recipe for recipe in optimized["recipes"]}
+    strands = {
+        index: tuple(component["strands"] for component in recipe["components"])
+        for index, recipe in recipes.items()
+    }
+    recipe_labs = _recipe_labs(optimized)
+    raw_colors = sorted({color for color in sample.display_srgb if color is not None})
+    raw_labs = {
+        color: lab for color, lab in zip(raw_colors, srgb_hex_to_lab(raw_colors), strict=True)
+    }
+    data_cost_cache: dict[tuple[str, int], float] = {}
+
+    def data_cost(color: str, recipe_index: int) -> float:
+        key = (color, recipe_index)
+        if key not in data_cost_cache:
+            data_cost_cache[key] = float(
+                delta_e_2000_lab(raw_labs[color], recipe_labs[recipe_index])
+            )
+        return data_cost_cache[key]
+
+    report: dict[str, Any] = {
+        "algorithm": "rendered-stitch-local-lighting-merge-v1",
+        "colors_before": colors_before,
+        "colors_after": colors_before,
+        "changed_stitches": 0,
+        "merged_components": 0,
+        "rounds": 0,
+        "removed_recipe_indices": [],
+        "merges": [],
+        "retained_components": {},
+        "limits": {
+            "max_component_size": max_component_size,
+            "max_delta_e00": max_delta_e00,
+            "max_error_increase": max_error_increase,
+            "max_mean_error_increase": max_mean_error_increase,
+            "min_neighbor_fraction": min_neighbor_fraction,
+            "max_rounds": max_rounds,
+        },
+    }
+    retained: Counter[str] = Counter()
+    for round_index in range(max_rounds):
+        changed_this_round = 0
+        counts = Counter(cell for cell in cells if cell)
+        components, _ = _component_map(cells, width, height)
+        for component in sorted(components, key=lambda value: (len(value), value[0])):
+            source = cells[component[0]]
+            if any(cells[offset] != source for offset in component):
+                continue
+            if len(component) > max_component_size:
+                retained["large_component"] += 1
+                continue
+            if any(offset in protected for offset in component):
+                retained["protected_region"] += 1
+                continue
+            component_set = set(component)
+            touches_silhouette = False
+            contact: Counter[int] = Counter()
+            for offset in component:
+                x, y = offset % width, offset // width
+                if x in {0, width - 1} or y in {0, height - 1}:
+                    touches_silhouette = True
+                for neighbor in _neighbors(offset, width, height):
+                    if neighbor in component_set:
+                        continue
+                    target = cells[neighbor]
+                    if target == 0:
+                        touches_silhouette = True
+                    elif target != source:
+                        contact[target] += 1
+            if touches_silhouette:
+                retained["silhouette_boundary"] += 1
+                continue
+            total_contact = sum(contact.values())
+            if not total_contact:
+                retained["no_neighbor"] += 1
+                continue
+            candidates = []
+            for target, touching in contact.items():
+                if touching / total_contact < min_neighbor_fraction:
+                    continue
+                if counts[target] < counts[source] or strands[target] != strands[source]:
+                    continue
+                material_delta = float(delta_e_2000_lab(recipe_labs[source], recipe_labs[target]))
+                if material_delta > max_delta_e00:
+                    continue
+                increases = []
+                for offset in component:
+                    color = sample.display_srgb[offset]
+                    if color is None:
+                        break
+                    increases.append(data_cost(color, target) - data_cost(color, source))
+                if len(increases) != len(component):
+                    continue
+                maximum = max(increases)
+                mean = float(np.mean(increases))
+                if maximum > max_error_increase or mean > max_mean_error_increase:
+                    continue
+                candidates.append(
+                    (
+                        maximum,
+                        mean,
+                        material_delta,
+                        -touching,
+                        -counts[target],
+                        target,
+                    )
+                )
+            if not candidates:
+                retained["no_safe_neighbor"] += 1
+                continue
+            maximum, mean, material_delta, negative_touching, _, target = min(candidates)
+            for offset in component:
+                cells[offset] = target
+            changed_this_round += len(component)
+            report["changed_stitches"] += len(component)
+            report["merged_components"] += 1
+            report["merges"].append(
+                {
+                    "round": round_index + 1,
+                    "from_recipe_index": source,
+                    "to_recipe_index": target,
+                    "stitches": len(component),
+                    "neighbor_contacts": -negative_touching,
+                    "delta_e00": round(material_delta, 4),
+                    "max_error_increase": round(maximum, 4),
+                    "mean_error_increase": round(mean, 4),
+                }
+            )
+        report["rounds"] = round_index + 1
+        if not changed_this_round:
+            break
+
+    used = set(cells) - {0}
+    removed = sorted(set(recipes) - used)
+    if removed:
+        removed_ids = {recipes[index]["id"] for index in removed}
+        optimized["recipes"] = [
+            recipe for recipe in optimized["recipes"] if recipe["index"] in used
+        ]
+        optimized["legend"] = [
+            item for item in optimized["legend"] if item["recipe_id"] not in removed_ids
+        ]
+    report["removed_recipe_indices"] = removed
+    report["colors_after"] = len(used)
+    report["retained_components"] = dict(sorted(retained.items()))
+    if tuple(bool(cell) for cell in cells) != occupancy:
+        raise ValueError("成品绣片线色归一化改变了针格轮廓")
+    validate_document(optimized).raise_for_errors()
+    return RareColorResult(optimized, report)
 
 
 def _has_thin_structure(offsets: list[int], width: int, height: int) -> bool:

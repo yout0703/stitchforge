@@ -31,7 +31,7 @@ from stitchforge.palette import (
     select_clustered_palette,
     select_palette,
 )
-from stitchforge.rare_colors import merge_rare_colors
+from stitchforge.rare_colors import merge_rare_colors, normalize_rendered_stitch_palette
 from stitchforge.recovery import recover_rendered_stitch_colors
 from stitchforge.segmentation import (
     BackgroundRemovalReport,
@@ -178,17 +178,15 @@ def build_conversion(
                     }
                 else:
                     pitch_plan = plan_from_stitch_evidence(evidence, normalized_path)
+                    planning_report = plan_import(normalized_path, work, evidence)
+                    validate_stitch_plan(planning_report["plan"], evidence)
+                    planning_report["subject_evidence"] = evidence
                     if pitch_plan is not None:
-                        planning_report = {
-                            "provider": "local",
-                            "method": "stitch_pitch",
-                            "fallback_reason": None,
-                            "subject_evidence": evidence,
-                            "plan": pitch_plan.model_dump(),
-                        }
-                    else:
-                        planning_report = plan_import(normalized_path, work)
-                        validate_stitch_plan(planning_report["plan"], evidence)
+                        planning_report["method"] = (
+                            "ai_stitch_evidence"
+                            if planning_report["provider"] in {"codex", "deepseek"}
+                            else "stitch_pitch"
+                        )
                 plan = planning_report["plan"]
                 grid_width, grid_height = plan["grid_width"], plan["grid_height"]
                 color_budget, fabric_count = plan["color_budget"], plan["fabric_count"]
@@ -333,6 +331,18 @@ def build_conversion(
                 color_budget=color_budget,
                 purpose="user_design",
             )
+            rendered_palette_report = None
+            if optimize and counted is None and source_profile == "rendered_stitch":
+                normalized_palette = normalize_rendered_stitch_palette(document, sampled)
+                document = normalized_palette.document
+                rendered_palette_report = normalized_palette.report
+                document.setdefault("extensions", {})["stitchforge.rendered_stitch_palette"] = {
+                    "version": 1,
+                    "colors_before": rendered_palette_report["colors_before"],
+                    "colors_after": rendered_palette_report["colors_after"],
+                    "changed_stitches": rendered_palette_report["changed_stitches"],
+                    "merged_components": rendered_palette_report["merged_components"],
+                }
             phase("quality")
             if planning_report is not None:
                 plan_artifact = artifact_store.put_bytes(
@@ -374,11 +384,7 @@ def build_conversion(
                 )
             optimization_report = None
             rare_color_report = None
-            if (
-                optimize
-                and counted is None
-                and (planning_report or {}).get("method") != "stitch_pitch"
-            ):
+            if optimize and counted is None and source_profile != "rendered_stitch":
                 optimization = optimize_small_components(document, sampled)
                 document = optimization.document
                 optimization_report = optimization.report.as_dict()
@@ -413,6 +419,7 @@ def build_conversion(
         ),
         "recovery_report": (recovery_report.as_dict() if recovery_report is not None else None),
         "palette_report": palette.as_dict(),
+        "rendered_palette_report": rendered_palette_report,
         "optimization_report": optimization_report,
         "rare_color_report": rare_color_report,
         "statistics": calculate_statistics(document).as_dict(),

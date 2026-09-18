@@ -63,7 +63,7 @@ export interface RareColorSummary {
 export interface ImageConversionResponse {
   planning_report?: {
     provider: 'codex' | 'deepseek' | 'local'
-    method?: 'counted_stitches' | 'stitch_pitch'
+    method?: 'counted_stitches' | 'stitch_pitch' | 'ai_stitch_evidence'
     structure_review?: { status: 'passed' | 'unavailable'; summary: string } | null
     model?: string
     fallback_reason: string | null
@@ -81,6 +81,13 @@ export interface ImageConversionResponse {
     algorithm: string
     adjusted_colors: number
     adjusted_cells: number
+  } | null
+  rendered_palette_report: {
+    algorithm: string
+    colors_before: number
+    colors_after: number
+    changed_stitches: number
+    merged_components: number
   } | null
   palette_report: {
     quality: {

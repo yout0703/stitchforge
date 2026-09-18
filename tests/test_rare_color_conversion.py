@@ -61,3 +61,61 @@ def test_conversion_merges_rare_color_and_persists_report_unless_disabled(tmp_pa
             assert report is None
             assert len(document["recipes"]) == 2
             assert "stitchforge.rare_colors" not in document["extensions"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_rendered_stitch_conversion_uses_dedicated_safe_palette_normalizer(
+    tmp_path,
+    enabled,
+):
+    catalog = json.loads((ROOT / "catalogs/dmc-117-2021-quiltysolid-2025-07.json").read_text())
+    catalog["materials"] = [
+        material for material in catalog["materials"] if material["display_srgb"]
+    ][:2]
+    for material, color in zip(catalog["materials"], ("#808080", "#828282"), strict=True):
+        material["display_srgb"] = color
+    catalog_path = tmp_path / "rendered-catalog.json"
+    catalog_path.write_text(json.dumps(catalog))
+    image = Image.new("RGB", (20, 20), "#808080")
+    image.putpixel((10, 10), (130, 130, 130))
+    payload = io.BytesIO()
+    image.save(payload, format="PNG")
+
+    with AccountClient(create_app(tmp_path / "data", catalog_path=catalog_path)) as client:
+        created = client.post("/api/v1/projects", json={"name": "成品绣片安全合色"}).json()
+        response = client.post(
+            f"/api/v1/projects/{created['project']['project_id']}/convert-image",
+            params={
+                "expected_head_revision_id": created["initial_revision"]["revision_id"],
+                "grid_width": 20,
+                "grid_height": 20,
+                "color_budget": 2,
+                "palette_strategy": "greedy",
+                "remove_border_background": "false",
+                "source_profile": "rendered_stitch",
+                "optimize": str(enabled).lower(),
+            },
+            content=payload.getvalue(),
+        )
+
+        assert response.status_code == 201, response.text
+        result = response.json()
+        report = result["rendered_palette_report"]
+        document = result["revision"]["document"]
+        assert result["optimization_report"] is None
+        assert result["rare_color_report"] is None
+        if enabled:
+            assert report["colors_before"] == 2
+            assert report["colors_after"] == 1
+            assert report["changed_stitches"] == 1
+            assert result["statistics"]["full_stitch_count"] == 400
+            assert result["statistics"]["used_recipe_count"] == 1
+            summary = document["extensions"]["stitchforge.rendered_stitch_palette"]
+            assert summary["changed_stitches"] == 1
+            manifest_hash = document["extensions"]["stitchforge.conversion"]["artifact_sha256"]
+            manifest = client.get(f"/api/v1/assets/{manifest_hash}").json()
+            assert manifest["reports"]["rendered_palette_report"] == report
+        else:
+            assert report is None
+            assert result["statistics"]["used_recipe_count"] == 2
+            assert "stitchforge.rendered_stitch_palette" not in document["extensions"]

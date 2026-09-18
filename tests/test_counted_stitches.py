@@ -7,7 +7,7 @@ import pytest
 from conftest import AccountClient
 from PIL import Image, ImageDraw
 from stitchforge.counted_stitches import inspect_stitch_evidence, recover_counted_stitches
-from stitchforge_api import create_app
+from stitchforge_api import create_app, planning
 
 MOTIF = ["...R...", "..RRR..", ".RRPRR.", "RRRRRRR", ".RRRRR.", "..RRR..", "...R..."]
 
@@ -212,7 +212,43 @@ def test_aida_cloth_reports_an_agreed_lattice_period(tmp_path):
     source = aida_scene(tmp_path / "aida.png")
     evidence = inspect_stitch_evidence(source)
     assert evidence["lattice_period"] == 16
+    assert [(item["grid_width"], item["grid_height"]) for item in evidence["grid_candidates"]] == [
+        (48, 72),
+        (96, 144),
+    ]
     assert recover_counted_stitches(source) is None
+
+
+def test_blank_fabric_bands_produce_a_68_by_102_candidate(tmp_path):
+    image = Image.new("RGB", (1020, 1530), "#F2ECDF")
+    draw = ImageDraw.Draw(image)
+    for x in range(0, image.width, 15):
+        draw.line((x, 0, x, image.height - 1), fill="#E2DACB", width=2)
+    for y in range(0, image.height, 15):
+        draw.line((0, y, image.width - 1, y), fill="#E2DACB", width=2)
+    draw.rectangle((260, 165, 759, 1364), fill="#078879")
+    for y in range(172, 1360, 15):
+        draw.line((260, y, 759, y), fill="#00685F", width=3)
+    source = tmp_path / "large-motif.png"
+    image.save(source)
+
+    evidence = inspect_stitch_evidence(source)
+
+    assert evidence["lattice_period"] == 15
+    assert evidence["grid_candidates"] == [
+        {
+            "grid_width": 68,
+            "grid_height": 102,
+            "lattice_period": 15,
+            "sampling": "one_stitch_per_cell",
+        }
+    ]
+    edge_measurements = [
+        item
+        for item in evidence["lattice_measurements"]
+        if item["source"].startswith("bare_fabric_") and item["agreed_period"] == 15
+    ]
+    assert len(edge_measurements) >= 2
 
 
 def test_printed_artwork_does_not_invent_a_cloth_lattice():
@@ -227,10 +263,14 @@ def test_large_dark_embroidered_scene_stays_a_small_chart(tmp_path, monkeypatch)
 
     source = aida_scene(tmp_path / "scene.png")
 
-    def unexpected_ai(*_):
-        pytest.fail("A measured cloth lattice must not be enlarged by an AI proposal")
+    def measured_ai(_image_path, _work, evidence):
+        assert evidence["lattice_period"] == 16
+        assert len(evidence["grid_candidates"]) == 2
+        plan = planning.plan_from_stitch_evidence(evidence, source)
+        assert plan is not None
+        return {"provider": "deepseek", "plan": plan.model_dump(), "fallback_reason": None}
 
-    monkeypatch.setattr(app_module, "plan_import", unexpected_ai)
+    monkeypatch.setattr(app_module, "plan_import", measured_ai)
     with AccountClient(create_app(tmp_path / "data")) as client:
         created = client.post("/api/v1/projects", json={"name": "绣片小图"}).json()
         response = client.post(
@@ -242,7 +282,7 @@ def test_large_dark_embroidered_scene_stays_a_small_chart(tmp_path, monkeypatch)
         result = response.json()
         plan = result["planning_report"]["plan"]
         document = result["revision"]["document"]
-        assert result["planning_report"]["method"] == "stitch_pitch"
+        assert result["planning_report"]["method"] == "ai_stitch_evidence"
         assert (plan["grid_width"], plan["grid_height"]) == (96, 144)
         assert plan["source_profile"] == "rendered_stitch"
         assert 90 <= max(document["grid"]["width"], document["grid"]["height"]) <= 144

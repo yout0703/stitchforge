@@ -76,6 +76,87 @@ def test_deepseek_sends_image_and_validates_json(source, tmp_path, monkeypatch):
     assert not list(tmp_path.glob("plan-*.json"))
 
 
+def test_deepseek_selects_measured_grid_candidate(tmp_path, monkeypatch):
+    monkeypatch.setenv("STITCHFORGE_AI_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-secret-never-export")
+    source = tmp_path / "stitched-photo.png"
+    Image.new("RGB", (1024, 1536), "#EEE8DC").save(source)
+    evidence = {
+        "analysis_size": [1024, 1536],
+        "periods": [13, 14, 15],
+        "lattice_period": 15,
+        "lattice_measurements": [
+            {
+                "source": "bare_fabric_top",
+                "period_x": 15,
+                "period_y": 15,
+                "confidence_x_ppm": 925_000,
+                "confidence_y_ppm": 894_000,
+                "agreed_period": 15,
+            }
+        ],
+        "grid_candidates": [
+            {
+                "grid_width": 68,
+                "grid_height": 102,
+                "lattice_period": 15,
+                "sampling": "one_stitch_per_cell",
+            }
+        ],
+    }
+    proposed = planning.plan_from_stitch_evidence(evidence, source)
+    assert proposed is not None
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        body = json.loads(request.content)
+        prompt = body["messages"][1]["content"][0]["text"]
+        assert '"grid_width":68' in prompt
+        assert '"grid_height":102' in prompt
+        assert "必须原样选择grid_candidates" in prompt
+        return httpx.Response(200, json=completion(proposed.model_dump()))
+
+    mock_service(monkeypatch, handler)
+    report = planning.plan_import(source, tmp_path, evidence)
+
+    assert report["provider"] == "deepseek"
+    assert (report["plan"]["grid_width"], report["plan"]["grid_height"]) == (68, 102)
+    assert len(calls) == 1
+
+
+def test_conflicting_deepseek_grid_uses_measured_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("STITCHFORGE_AI_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-secret-never-export")
+    source = tmp_path / "stitched-photo.png"
+    Image.new("RGB", (1024, 1536), "#EEE8DC").save(source)
+    evidence = {
+        "analysis_size": [1024, 1536],
+        "periods": [15],
+        "lattice_period": 15,
+        "grid_candidates": [
+            {
+                "grid_width": 68,
+                "grid_height": 102,
+                "lattice_period": 15,
+                "sampling": "one_stitch_per_cell",
+            }
+        ],
+    }
+    conflicting = planning.plan_from_stitch_evidence(evidence, source).model_dump()
+    conflicting.update(grid_width=40, grid_height=60)
+    mock_service(
+        monkeypatch,
+        lambda request: httpx.Response(200, json=completion(conflicting)),
+    )
+
+    report = planning.plan_import(source, tmp_path, evidence)
+
+    assert report["provider"] == "local"
+    assert (report["plan"]["grid_width"], report["plan"]["grid_height"]) == (68, 102)
+    assert "未通过校验" in report["fallback_reason"]
+
+
 @pytest.mark.parametrize(
     "failure",
     [

@@ -158,10 +158,16 @@ def test_structure_check_detects_lost_motif(example):
 @pytest.mark.parametrize("grid", [(12, 18), (360, 540)])
 def test_whole_image_plan_cannot_conflict_with_subject_pitch(grid):
     plan = {"grid_width": grid[0], "grid_height": grid[1], "source_profile": "rendered_stitch"}
-    evidence = {"periods": [35], "analysis_size": [1024, 1536]}
+    evidence = {"periods": [35], "lattice_period": 35, "analysis_size": [1024, 1536]}
     with pytest.raises(ValueError, match="针距不一致"):
         planning.validate_stitch_plan(plan, evidence)
     plan.update(grid_width=29, grid_height=44)
+    planning.validate_stitch_plan(plan, evidence)
+
+
+def test_one_axis_period_is_not_strong_enough_to_reject_ai_plan():
+    plan = {"grid_width": 68, "grid_height": 102, "source_profile": "rendered_stitch"}
+    evidence = {"periods": [13, 14], "lattice_period": None, "analysis_size": [1024, 1536]}
     planning.validate_stitch_plan(plan, evidence)
 
 
@@ -230,7 +236,7 @@ def test_rejected_size_does_not_charge_or_fall_back_to_a_large_chart(tmp_path, m
     from stitchforge_api import conversion as app_module
 
     source = stitched_photo(tmp_path / "source.png")
-    evidence = {"periods": [35], "analysis_size": [1024, 1536]}
+    evidence = {"periods": [35], "lattice_period": 35, "analysis_size": [1024, 1536]}
     monkeypatch.setattr(app_module, "counted_stitch_candidates", lambda *_: ([], evidence))
     monkeypatch.setattr(
         app_module,

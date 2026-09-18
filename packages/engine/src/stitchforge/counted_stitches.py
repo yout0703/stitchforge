@@ -72,6 +72,76 @@ def _period(signal: np.ndarray) -> tuple[int, float] | None:
     return lag, float(correlation[lag])
 
 
+def _period_measurement(source: str, signal: np.ndarray) -> dict:
+    horizontal = _period(signal.mean(axis=0))
+    vertical = _period(signal.mean(axis=1))
+    return {
+        "source": source,
+        "period_x": horizontal[0] if horizontal is not None else None,
+        "period_y": vertical[0] if vertical is not None else None,
+        "confidence_x_ppm": round(horizontal[1] * 1_000_000) if horizontal is not None else None,
+        "confidence_y_ppm": round(vertical[1] * 1_000_000) if vertical is not None else None,
+        "agreed_period": _agreed_period(horizontal, vertical),
+    }
+
+
+def _edge_lattice_measurements(luma: np.ndarray) -> list[dict]:
+    """Measure clean cloth bands without averaging through a large stitched subject."""
+    height, width = luma.shape
+    band_y = min(256, max(80, height // 10))
+    band_x = min(256, max(80, width // 10))
+    texture = 1 - luma
+    regions = {
+        "bare_fabric_top": texture[:band_y, :],
+        "bare_fabric_bottom": texture[-band_y:, :],
+        "bare_fabric_left": texture[:, :band_x],
+        "bare_fabric_right": texture[:, -band_x:],
+    }
+    return [_period_measurement(source, signal) for source, signal in regions.items()]
+
+
+def _consensus_edge_period(measurements: list[dict]) -> int | None:
+    """Require the same two-axis pitch in at least two independent cloth bands."""
+    periods = [
+        int(item["agreed_period"])
+        for item in measurements
+        if item["source"].startswith("bare_fabric_") and item["agreed_period"] is not None
+    ]
+    best: list[int] = []
+    for period in periods:
+        group = [value for value in periods if abs(value - period) / max(value, period) <= 0.12]
+        if len(group) > len(best):
+            best = group
+    if len(best) < 2:
+        return None
+    return int(round(float(np.median(best))))
+
+
+def _grid_candidates(width: int, height: int, period: int | None) -> list[dict]:
+    if period is None or period < 8:
+        return []
+    grid_width = max(1, round(width / period))
+    grid_height = max(1, round(height / period))
+    candidates = [
+        {
+            "grid_width": grid_width,
+            "grid_height": grid_height,
+            "lattice_period": period,
+            "sampling": "one_stitch_per_cell",
+        }
+    ]
+    if max(grid_width, grid_height) < 160 and period >= 16:
+        candidates.append(
+            {
+                "grid_width": max(1, round(width / (period / 2))),
+                "grid_height": max(1, round(height / (period / 2))),
+                "lattice_period": period,
+                "sampling": "half_pitch_detail_preserving",
+            }
+        )
+    return candidates
+
+
 def recover_counted_stitches(
     source: Path,
     *,
@@ -274,7 +344,13 @@ def inspect_stitch_evidence(source: Path) -> dict:
         image = image.convert("RGB")
         image.thumbnail((1536, 1536))
         rgb = np.asarray(image, dtype=np.float64) / 255
-    empty = {"periods": [], "subject_box": None, "lattice_period": None}
+    empty = {
+        "periods": [],
+        "subject_box": None,
+        "lattice_period": None,
+        "lattice_measurements": [],
+        "grid_candidates": [],
+    }
     border = np.concatenate((rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]))
     background = np.median(border, axis=0)
     if background.min() < 0.65 or np.ptp(background) > 0.16:
@@ -288,34 +364,42 @@ def inspect_stitch_evidence(source: Path) -> dict:
     left, right = np.quantile(xs, [0.001, 0.999]).astype(int)
     top, bottom = np.quantile(ys, [0.001, 0.999]).astype(int)
     periods: set[int] = set()
-    lattice = None
-    for signal in (mask, (1 - luma) * mask):
+    measurements: list[dict] = []
+    for source_name, signal in (
+        ("subject_colour_coverage", mask),
+        ("subject_thread_luminance", (1 - luma) * mask),
+    ):
         subject = signal[top : bottom + 1, left : right + 1]
-        horizontal, vertical = _period(subject.mean(axis=0)), _period(subject.mean(axis=1))
-        if horizontal is not None:
-            periods.add(horizontal[0])
-        if vertical is not None:
-            periods.add(vertical[0])
-        agreed = _agreed_period(horizontal, vertical)
-        if agreed is not None:
-            lattice = agreed
+        measurements.append(_period_measurement(source_name, subject))
     fabric = np.linalg.norm(rgb - background, axis=2) < 0.12
     if 0.12 < float(fabric.mean()) < 0.88:
-        for signal in ((1 - luma) * fabric, chroma * fabric):
-            horizontal, vertical = _period(signal.mean(axis=0)), _period(signal.mean(axis=1))
-            agreed = _agreed_period(horizontal, vertical)
-            if agreed is None:
-                continue
-            lattice = agreed
-            if horizontal is not None:
-                periods.add(horizontal[0])
-            if vertical is not None:
-                periods.add(vertical[0])
-            break
+        measurements.extend(
+            (
+                _period_measurement("whole_fabric_luminance", (1 - luma) * fabric),
+                _period_measurement("whole_fabric_chroma", chroma * fabric),
+            )
+        )
+    measurements.extend(_edge_lattice_measurements(luma))
+    for measurement in measurements:
+        if measurement["period_x"] is not None:
+            periods.add(int(measurement["period_x"]))
+        if measurement["period_y"] is not None:
+            periods.add(int(measurement["period_y"]))
+    lattice = _consensus_edge_period(measurements)
+    if lattice is None:
+        agreed = [item for item in measurements if item["agreed_period"] is not None]
+        if agreed:
+            strongest = max(
+                agreed,
+                key=lambda item: min(item["confidence_x_ppm"], item["confidence_y_ppm"]),
+            )
+            lattice = int(strongest["agreed_period"])
     return {
         "periods": sorted(periods),
         "lattice_period": lattice,
         "analysis_size": [image.width, image.height],
+        "lattice_measurements": measurements,
+        "grid_candidates": _grid_candidates(image.width, image.height, lattice),
         "subject_box": [
             round(value * dimension / analysed)
             for value, dimension, analysed in zip(

@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 from stitchforge.imaging import GridSample
-from stitchforge.rare_colors import merge_rare_colors
+from stitchforge.rare_colors import merge_rare_colors, normalize_rendered_stitch_palette
 from stitchforge.validation import validate_document
 
 
@@ -19,6 +19,123 @@ def fixture(document, offsets=(168, 169, 188, 189), *, rare_color="#828282"):
     colors = tuple(rare_color if cell == 2 else "#808080" for cell in cells)
     sample = GridSample(20, 20, 500_000, (1_000_000,) * 400, colors)
     return document, sample
+
+
+def rendered_fixture(
+    document,
+    offsets=(210,),
+    *,
+    base_color="#808080",
+    detail_color="#828282",
+    sample_detail="#818181",
+):
+    document, _ = fixture(
+        document,
+        offsets,
+        rare_color=detail_color,
+    )
+    document["materials"][0]["color"]["display_srgb"] = base_color
+    colors = tuple(
+        sample_detail if cell == 2 else base_color for cell in document["full_stitches"]["cells"]
+    )
+    sample = GridSample(20, 20, 500_000, (1_000_000,) * 400, colors)
+    return document, sample
+
+
+def test_rendered_palette_absorbs_only_safe_internal_lighting_fragment(minimal_document):
+    document, sample = rendered_fixture(minimal_document)
+    original_occupancy = [bool(cell) for cell in document["full_stitches"]["cells"]]
+
+    result = normalize_rendered_stitch_palette(document, sample)
+
+    assert result.document["full_stitches"]["cells"] == [1] * 400
+    assert [recipe["index"] for recipe in result.document["recipes"]] == [1]
+    assert [bool(cell) for cell in result.document["full_stitches"]["cells"]] == original_occupancy
+    assert result.report["colors_before"] == 2
+    assert result.report["colors_after"] == 1
+    assert result.report["changed_stitches"] == 1
+    assert result.report["merged_components"] == 1
+    assert result.report["removed_recipe_indices"] == [2]
+    assert validate_document(result.document).valid
+
+    repeated = normalize_rendered_stitch_palette(result.document, sample)
+    assert repeated.document == result.document
+    assert repeated.report["changed_stitches"] == 0
+    assert repeated.report["colors_before"] == repeated.report["colors_after"] == 1
+
+
+def test_rendered_palette_absorbs_multiple_disconnected_safe_fragments(minimal_document):
+    offsets = (126, 210, 273)
+    document, sample = rendered_fixture(minimal_document, offsets)
+
+    result = normalize_rendered_stitch_palette(document, sample)
+
+    assert result.report["changed_stitches"] == len(offsets)
+    assert result.report["merged_components"] == len(offsets)
+    assert result.report["colors_after"] == 1
+    assert result.document["full_stitches"]["cells"] == [1] * 400
+
+
+@pytest.mark.parametrize(
+    ("offsets", "detail_color", "sample_detail", "reason"),
+    [
+        ((0,), "#828282", "#818181", "silhouette_boundary"),
+        ((168, 169, 170, 171), "#828282", "#818181", "large_component"),
+        ((210,), "#D02050", "#D02050", "no_safe_neighbor"),
+        ((210,), "#909090", "#909090", "no_safe_neighbor"),
+    ],
+)
+def test_rendered_palette_preserves_boundaries_large_regions_and_accents(
+    minimal_document,
+    offsets,
+    detail_color,
+    sample_detail,
+    reason,
+):
+    document, sample = rendered_fixture(
+        minimal_document,
+        offsets,
+        detail_color=detail_color,
+        sample_detail=sample_detail,
+    )
+
+    result = normalize_rendered_stitch_palette(document, sample)
+
+    assert result.document == document
+    assert result.report["changed_stitches"] == 0
+    assert result.report["retained_components"][reason] >= 1
+
+
+def test_rendered_palette_preserves_locked_and_preserve_regions(minimal_document):
+    for policy in ("locked", "preserve"):
+        document, sample = rendered_fixture(minimal_document)
+        document["regions"] = [
+            {
+                "id": f"{policy}_detail",
+                "name": "受保护细节",
+                "policy": policy,
+                "spans": [{"row": 10, "start_col": 10, "end_col": 11}],
+            }
+        ]
+        result = normalize_rendered_stitch_palette(document, sample)
+        assert result.document == document
+        assert result.report["retained_components"]["protected_region"] >= 1
+
+
+def test_rendered_palette_rejects_invalid_grid_and_parameters(minimal_document):
+    document, sample = rendered_fixture(minimal_document)
+    with pytest.raises(ValueError, match="尺寸"):
+        normalize_rendered_stitch_palette(document, GridSample(1, 1, 0, (0,), (None,)))
+    for kwargs in (
+        {"max_component_size": 0},
+        {"max_delta_e00": -1},
+        {"max_error_increase": -1},
+        {"max_mean_error_increase": -1},
+        {"min_neighbor_fraction": 0.4},
+        {"max_rounds": 0},
+    ):
+        with pytest.raises(ValueError, match="参数"):
+            normalize_rendered_stitch_palette(document, sample, **kwargs)
 
 
 def test_merges_four_cell_similar_rare_color_and_removes_only_its_legend(minimal_document):
