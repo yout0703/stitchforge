@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from typing import Any
+
+import numpy as np
 
 from .imaging import GridSample
 from .palette import delta_e_2000_lab, srgb_hex_to_lab
 from .validation import validate_document
+
+_MAX_COST_TABLE_ENTRIES = 16_777_216  # 128 MiB of float64 values, including CLI use.
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +84,7 @@ def _component_map(cells: list[int], width: int, height: int) -> tuple[list[list
                 if not (0 <= neighbor_x < width and 0 <= neighbor_y < height):
                     continue
                 neighbor = neighbor_y * width + neighbor_x
-                if (
-                    component_by_offset[neighbor] == -1
-                    and cells[neighbor] == recipe_index
-                ):
+                if component_by_offset[neighbor] == -1 and cells[neighbor] == recipe_index:
                     component_by_offset[neighbor] = component_id
                     stack.append(neighbor)
         components.append(sorted(offsets))
@@ -128,28 +131,103 @@ def _recipe_labs(document: dict[str, Any]) -> dict[int, Any]:
     return {index: lab for index, lab in zip(indices, labs, strict=True)}
 
 
+@dataclass(frozen=True, slots=True)
+class _OptimizationCosts:
+    target_indices: np.ndarray
+    recipe_columns: dict[int, int]
+    distances: np.ndarray | None
+    edge_weights: np.ndarray
+    distance_row: Callable[[int], np.ndarray]
+
+    def distance(self, offset: int, recipe_index: int) -> float:
+        target = self.target_indices[offset]
+        if recipe_index == 0 or target < 0:
+            return 0.0
+        column = self.recipe_columns[recipe_index]
+        if self.distances is not None:
+            return float(self.distances[target, column])
+        return float(self.distance_row(int(target))[column])
+
+
+def _optimization_costs(
+    sample: GridSample,
+    recipe_labs: dict[int, Any],
+    *,
+    edge_lambda: float,
+) -> _OptimizationCosts:
+    """Evaluate exact CIEDE2000 costs in bounded batches, once per conversion.
+
+    Scalar colour-science calls dominated large charts, including two full
+    energy scans. Reuse float64 distances without changing the search or its
+    acceptance thresholds. Batch size bounds temporary broadcast arrays.
+    """
+    width, height = sample.width, sample.height
+    unique_targets = sorted({color for color in sample.display_srgb if color is not None})
+    target_lookup = {color: index for index, color in enumerate(unique_targets)}
+    target_indices = np.asarray(
+        [target_lookup.get(color, -1) for color in sample.display_srgb], dtype=np.int32
+    )
+    # Keep all-empty charts usable; colour-science expects an N x 3 input.
+    target_labs = srgb_hex_to_lab(unique_targets) if unique_targets else np.empty((0, 3))
+    recipe_indices = sorted(recipe_labs)
+    material_labs = np.asarray([recipe_labs[index] for index in recipe_indices]).reshape(-1, 3)
+    distances = None
+    if len(unique_targets) * len(recipe_indices) <= _MAX_COST_TABLE_ENTRIES:
+        distances = np.empty((len(unique_targets), len(recipe_indices)), dtype=np.float64)
+        for start in range(0, len(unique_targets), 1024):
+            distances[start : start + 1024] = delta_e_2000_lab(
+                target_labs[start : start + 1024, np.newaxis, :],
+                material_labs[np.newaxis, :, :],
+            )
+
+    @lru_cache(maxsize=128)
+    def distance_row(target: int) -> np.ndarray:
+        # Imported documents may contain far more than generation's 64 colors.
+        # Compute only the requested rows when the full table would be too big.
+        return delta_e_2000_lab(target_labs[target], material_labs)
+
+    edge_weights = np.zeros((2, len(sample.display_srgb)), dtype=np.float64)
+    grid_offsets = np.arange(width * height).reshape(height, width)
+    for axis, first, second in (
+        (0, grid_offsets[:, :-1].ravel(), grid_offsets[:, 1:].ravel()),
+        (1, grid_offsets[:-1, :].ravel(), grid_offsets[1:, :].ravel()),
+    ):
+        valid = (target_indices[first] >= 0) & (target_indices[second] >= 0)
+        first, second = first[valid], second[valid]
+        for start in range(0, len(first), 8192):
+            left, right = first[start : start + 8192], second[start : start + 8192]
+            # Match the old cache's sorted-color order for deterministic ties.
+            left_index = np.minimum(target_indices[left], target_indices[right])
+            right_index = np.maximum(target_indices[left], target_indices[right])
+            delta = delta_e_2000_lab(target_labs[left_index], target_labs[right_index])
+            edge_weights[axis, left] = edge_lambda * np.maximum(
+                0.1, 1.0 - np.minimum(delta / 30.0, 0.9)
+            )
+    return _OptimizationCosts(
+        target_indices,
+        {index: column for column, index in enumerate(recipe_indices)},
+        distances,
+        edge_weights,
+        distance_row,
+    )
+
+
 def _energy(
     cells: list[int],
     sample: GridSample,
-    recipe_labs: dict[int, Any],
+    costs: _OptimizationCosts,
     policy_weights: list[float],
     *,
-    edge_lambda: float,
     small_mu: float,
 ) -> _Energy:
     width, height = sample.width, sample.height
-    unique_targets = sorted({color for color in sample.display_srgb if color is not None})
-    target_lab = {
-        color: lab
-        for color, lab in zip(unique_targets, srgb_hex_to_lab(unique_targets), strict=True)
-    }
     data = 0.0
     edge = 0.0
     for offset, recipe_index in enumerate(cells):
         target = sample.display_srgb[offset]
         if recipe_index and target is not None:
             data += (
-                float(delta_e_2000_lab(target_lab[target], recipe_labs[recipe_index]))
+                costs.distance(offset, recipe_index)
                 * sample.coverage_ppm[offset]
                 / 1_000_000
                 * policy_weights[offset]
@@ -167,11 +245,7 @@ def _energy(
             right_target = sample.display_srgb[neighbor]
             if left_target is None or right_target is None:
                 continue
-            target_delta = float(
-                delta_e_2000_lab(target_lab[left_target], target_lab[right_target])
-            )
-            edge_weight = max(0.1, 1.0 - min(target_delta / 30.0, 0.9))
-            edge += edge_lambda * edge_weight
+            edge += float(costs.edge_weights[0 if neighbor == offset + 1 else 1, offset])
     components, _ = _component_map(cells, width, height)
     small = small_mu * sum(len(component) for component in components if len(component) <= 3)
     return _Energy(data, edge, small)
@@ -202,25 +276,14 @@ def optimize_small_components(
     original_cells = list(cells)
     recipe_labs = _recipe_labs(optimized)
     locked, policy_weights = _region_policies(optimized)
-    target_colors = sorted({color for color in sample.display_srgb if color is not None})
-    target_labs = {
-        color: lab
-        for color, lab in zip(target_colors, srgb_hex_to_lab(target_colors), strict=True)
-    }
-    data_cost_cache: dict[tuple[str, int], float] = {}
-    edge_weight_cache: dict[tuple[str, str], float] = {}
+    costs = _optimization_costs(sample, recipe_labs, edge_lambda=edge_lambda)
 
     def data_cost(offset: int, recipe_index: int) -> float:
         target = sample.display_srgb[offset]
         if recipe_index == 0 or target is None:
             return 0.0
-        key = (target, recipe_index)
-        if key not in data_cost_cache:
-            data_cost_cache[key] = float(
-                delta_e_2000_lab(target_labs[target], recipe_labs[recipe_index])
-            )
         return (
-            data_cost_cache[key]
+            costs.distance(offset, recipe_index)
             * sample.coverage_ppm[offset]
             / 1_000_000
             * policy_weights[offset]
@@ -233,13 +296,7 @@ def optimize_small_components(
         second_target = sample.display_srgb[second]
         if first_target is None or second_target is None:
             return 0.0
-        key = tuple(sorted((first_target, second_target)))
-        if key not in edge_weight_cache:
-            target_delta = float(
-                delta_e_2000_lab(target_labs[key[0]], target_labs[key[1]])
-            )
-            edge_weight_cache[key] = max(0.1, 1.0 - min(target_delta / 30.0, 0.9))
-        return edge_lambda * edge_weight_cache[key]
+        return float(costs.edge_weights[0 if second == first + 1 else 1, first])
 
     def small_cost(size: int) -> float:
         return small_mu * size if size <= 3 else 0.0
@@ -247,9 +304,8 @@ def optimize_small_components(
     before = _energy(
         cells,
         sample,
-        recipe_labs,
+        costs,
         policy_weights,
-        edge_lambda=edge_lambda,
         small_mu=small_mu,
     )
     accepted_components = 0
@@ -272,9 +328,7 @@ def optimize_small_components(
                 if cells[neighbor] not in {0, source_recipe}
             }
             neighboring_component_ids.discard(-1)
-            candidates = sorted(
-                {cells[components[item][0]] for item in neighboring_component_ids}
-            )
+            candidates = sorted({cells[components[item][0]] for item in neighboring_component_ids})
             if not candidates:
                 continue
             best_recipe: int | None = None
@@ -289,12 +343,7 @@ def optimize_small_components(
                 if any(
                     policy_weights[offset] > 1
                     and sample.display_srgb[offset] is not None
-                    and float(
-                        delta_e_2000_lab(
-                            target_labs[sample.display_srgb[offset]], recipe_labs[candidate]
-                        )
-                    )
-                    > preserve_max_delta_e00
+                    and costs.distance(offset, candidate) > preserve_max_delta_e00
                     for offset in component
                 ):
                     continue
@@ -346,9 +395,8 @@ def optimize_small_components(
     after = _energy(
         cells,
         sample,
-        recipe_labs,
+        costs,
         policy_weights,
-        edge_lambda=edge_lambda,
         small_mu=small_mu,
     )
     changes = tuple(
