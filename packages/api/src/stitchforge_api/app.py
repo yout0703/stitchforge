@@ -30,6 +30,7 @@ from stitchforge.commands import (
 from stitchforge.errors import DocumentValidationError
 from stitchforge.fabric import MAX_GRID_SIDE
 from stitchforge.oxs import MAX_OXS_BYTES, SUPPORTED_COORDINATE_PROFILE, export_oxs, import_oxs
+from stitchforge.xsd import MAX_XSD_BYTES, export_xsd, import_xsd
 from stitchforge_storage import (
     ContentAddressedArtifactStore,
     SQLiteStore,
@@ -214,6 +215,17 @@ async def read_oxs_upload(request: Request) -> bytes:
     return bytes(payload)
 
 
+async def read_xsd_upload(request: Request) -> bytes:
+    payload = bytearray()
+    async for chunk in request.stream():
+        if len(payload) + len(chunk) > MAX_XSD_BYTES:
+            raise AccountError("UPLOAD_TOO_LARGE", "XSD 文件超过 16 MiB 限制", 413)
+        payload.extend(chunk)
+    if not payload:
+        raise AccountError("INVALID_XSD", "请选择非空的 XSD 文件", 422)
+    return bytes(payload)
+
+
 def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", _identifier("req"))
 
@@ -349,6 +361,51 @@ def _router() -> APIRouter:
             "source_sha256": artifact.artifact_hash,
         }
 
+    @router.post("/projects/import-xsd", status_code=status.HTTP_201_CREATED)
+    def import_xsd_project(
+        request: Request,
+        store: StoreDependency,
+        artifact_store: ArtifactStoreDependency,
+        payload: Annotated[bytes, Depends(read_xsd_upload)],
+        legacy_encoding: Literal["cp1251", "gb18030", "cp1252"] = "cp1251",
+    ) -> Any:
+        with tempfile.TemporaryDirectory(prefix="xsd-", dir=request.app.state.work_dir) as name:
+            path = Path(name) / "source.xsd"
+            path.write_bytes(payload)
+            imported = import_xsd(path, legacy_encoding=legacy_encoding)
+        if imported.document is None or imported.report.blocked:
+            errors = [issue for issue in imported.report.issues if issue["severity"] == "error"]
+            return _error_response(
+                request,
+                status_code=422,
+                code="INVALID_XSD",
+                message="；".join(issue["message"][:400] for issue in errors[:3]) or "XSD 导入失败",
+                details=imported.report.as_dict(),
+            )
+        document = imported.document
+        artifact = artifact_store.put_bytes(payload, media_type="application/octet-stream")
+        request.app.state.accounts.grant_assets(
+            request.state.user["user_id"], [artifact.artifact_hash]
+        )
+        for source in document["provenance"].get("sources", []):
+            source["locator"] = f"/api/v1/assets/{artifact.artifact_hash}"
+        project_id = _identifier("project")
+        document["metadata"]["pattern_id"] = project_id
+        project, revision = store.create_project_with_revision(
+            project_id,
+            workspace_id=request.state.user["user_id"],
+            name=document["metadata"]["title"] or "XSD 图纸",
+            revision_id=_identifier("revision"),
+            document=document,
+            now_ms=_now_ms(),
+        )
+        return {
+            "project": asdict(project),
+            "initial_revision": asdict(revision),
+            "report": imported.report.as_dict(),
+            "source_sha256": artifact.artifact_hash,
+        }
+
     @router.get("/projects")
     def list_projects(
         request: Request,
@@ -463,7 +520,7 @@ def _router() -> APIRouter:
     def download_revision(
         project_id: str,
         revision_id: str,
-        format: Literal["oxs", "png"],
+        format: Literal["oxs", "xsd", "png"],
         request: Request,
         store: StoreDependency,
     ) -> Response:
@@ -489,6 +546,18 @@ def _router() -> APIRouter:
                         raise AccountError(
                             "EXPORT_FAILED", "此图纸无法导出 OXS，请检查线色数据。", 422
                         )
+                elif format == "xsd":
+                    report = export_xsd(revision.document, path, confirm_loss=True)
+                    if report.blocked:
+                        raise AccountError(
+                            "EXPORT_FAILED",
+                            "；".join(
+                                issue["message"]
+                                for issue in report.issues
+                                if issue["severity"] == "error"
+                            )[:1200],
+                            422,
+                        )
                 else:
                     render_download_chart(revision.document, path)
                 payload = path.read_bytes()
@@ -500,7 +569,11 @@ def _router() -> APIRouter:
         filename = f"{title[:120].strip() or 'chart'}.{format}"
         return Response(
             payload,
-            media_type="image/png" if format == "png" else "application/xml",
+            media_type={
+                "png": "image/png",
+                "oxs": "application/xml",
+                "xsd": "application/octet-stream",
+            }[format],
             headers={
                 "Content-Disposition": f"attachment; filename=chart.{format}; "
                 f"filename*=UTF-8''{quote(filename, safe='')}"

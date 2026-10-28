@@ -2,16 +2,25 @@ import { useEffect, useRef, useState } from 'react'
 import { deleteProject, listProjects, renameProject, restoreProject } from '../lib/api'
 import type { LibraryProject } from '../lib/types'
 import {
-  IconSearch,
-  IconSparkles,
-  IconFileCode,
-  IconPlus,
-  IconSort,
-  IconRefresh,
-  IconTrash,
-  IconEdit,
-  IconFolder,
-} from './Icons'
+  ArrowsClockwiseIcon,
+  ClockIcon,
+  FileCodeIcon,
+  EyeIcon,
+  FolderOpenIcon,
+  GridFourIcon,
+  HashIcon,
+  ImageBrokenIcon,
+  ListIcon,
+  LockSimpleIcon,
+  MagicWandIcon,
+  MagnifyingGlassIcon,
+  PaletteIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  SortAscendingIcon,
+  TrashIcon,
+  XIcon,
+} from '@phosphor-icons/react'
 
 interface Props {
   onOpen: (id: string) => Promise<void>
@@ -24,6 +33,8 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
   const [search, setSearch] = useState('')
   const [deleted, setDeleted] = useState(false)
   const [sort, setSort] = useState('updated')
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const [reload, setReload] = useState(0)
   const [result, setResult] = useState<{ items: LibraryProject[]; total: number }>({ items: [], total: 0 })
@@ -90,9 +101,17 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
   }
 
   const sourceKindMap = {
-    image: { label: '图片生成', icon: IconSparkles, className: 'kind-image' },
-    oxs: { label: 'OXS 导入', icon: IconFileCode, className: 'kind-oxs' },
-    blank: { label: '新建', icon: IconPlus, className: 'kind-blank' },
+    image: { label: '图片生成', shortLabel: '图片', icon: MagicWandIcon, className: 'kind-image' },
+    oxs: { label: 'OXS 导入', shortLabel: 'OXS', icon: FileCodeIcon, className: 'kind-oxs' },
+    xsd: { label: 'XSD 导入', shortLabel: 'XSD', icon: FileCodeIcon, className: 'kind-oxs' },
+    blank: { label: '空白图纸', shortLabel: '空白', icon: PlusIcon, className: 'kind-blank' },
+  }
+  const selectedProject = result.items.find((project) => project.project_id === selectedId) ?? result.items[0] ?? null
+  const selectedThumbnailFailed = selectedProject ? failedThumbnails.has(selectedProject.project_id) : false
+
+  function thumbnailUrl(project: LibraryProject) {
+    if (!project.head_revision_id) return ''
+    return `/api/v1/projects/${encodeURIComponent(project.project_id)}/thumbnail?revision_id=${encodeURIComponent(project.head_revision_id)}`
   }
 
   return (
@@ -101,9 +120,17 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
         <div className="library-heading">
           <div>
             <h1>我的图纸</h1>
-            <p>新建、图片生成和 OXS 导入的作品，都保存在这里。</p>
+            <p>打开图纸，对照针格、查找线色并记录绣制进度。</p>
           </div>
-          <span className="storage-badge">仅自己可见</span>
+          <span className="storage-badge"><LockSimpleIcon size={14} aria-hidden="true" />仅自己可见</span>
+          <div className="library-view-switcher" aria-label="图纸显示方式">
+            <button type="button" className={view === 'grid' ? 'active' : ''} aria-pressed={view === 'grid'} onClick={() => setView('grid')}>
+              <GridFourIcon size={17} weight={view === 'grid' ? 'fill' : 'regular'} aria-hidden="true" />网格
+            </button>
+            <button type="button" className={view === 'list' ? 'active' : ''} aria-pressed={view === 'list'} onClick={() => setView('list')}>
+              <ListIcon size={17} weight={view === 'list' ? 'bold' : 'regular'} aria-hidden="true" />列表
+            </button>
+          </div>
         </div>
 
         <div className="library-controls">
@@ -129,7 +156,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
           </div>
 
           <div className="search-box-wrapper">
-            <IconSearch className="search-box-icon" aria-hidden="true" />
+            <MagnifyingGlassIcon className="search-box-icon" aria-hidden="true" />
             <input
               type="search"
               aria-label="搜索图纸"
@@ -143,7 +170,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
 
           <div className="library-actions-group">
             <div className="select-wrapper">
-              <IconSort className="select-icon" aria-hidden="true" />
+              <SortAscendingIcon className="select-icon" aria-hidden="true" />
               <select
                 aria-label="图纸排序"
                 value={sort}
@@ -159,7 +186,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
             </div>
 
             <button type="button" className="quiet-button refresh-button" aria-label="刷新图纸列表" disabled={busy} onClick={refresh}>
-              <IconRefresh aria-hidden="true" />
+              <ArrowsClockwiseIcon aria-hidden="true" />
               <span>刷新列表</span>
             </button>
           </div>
@@ -174,133 +201,145 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
       ) : loading ? (
         <div className="library-loading" role="status">
           <span className="sr-only">正在读取图纸…</span>
-          <div className="project-cards" aria-hidden="true">
+          <div className="library-content" aria-hidden="true">
+          <div className="project-cards">
             {Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton-card" key={index}>
               <div className="skeleton-media" />
               <div className="skeleton-body"><i /><i /><i /></div>
             </div>)}
           </div>
+          <div className="project-detail skeleton-detail"><div className="skeleton-media" /><div className="skeleton-body"><i /><i /><i /></div></div>
+          </div>
         </div>
       ) : (
         <>
           <div className="library-summary">
-            <span>{deleted ? '回收站' : '图纸'} · {result.total} 份{deleted && ' · 可随时恢复，原图和历史版本仍保留'}</span>
-            <span className="library-private-note">仅自己可见</span>
+            <span>{deleted ? '回收站' : '图纸'} {result.total} 份{deleted && '，可随时恢复，原图和历史版本仍保留'}</span>
+            <span className="library-private-note">选择图纸查看详情</span>
           </div>
 
           {result.items.length === 0 ? (
             <div className="library-empty">
               <div className="empty-icon-wrap">
-                <IconFolder className="empty-icon" />
+                <FolderOpenIcon className="empty-icon" />
               </div>
               <h2>{search ? '没有找到匹配的图纸' : deleted ? '回收站是空的' : '还没有图纸'}</h2>
-              <p>{search ? '换个名称试试，或清空搜索。' : deleted ? '移除的图纸会保留在这里。' : '点击顶部「导入图片」「导入 OXS」或「新建图纸」开始。'}</p>
+              <p>{search ? '换个名称试试，或清空搜索。' : deleted ? '移除的图纸会保留在这里。' : '从左侧上传图片自动生成图纸，或导入已有的 OXS / XSD 文件。'}</p>
             </div>
           ) : (
-            <div className="project-cards">
+            <div className={`library-content view-${view}`}>
+            <div className={`project-cards view-${view}`}>
               {result.items.map((project) => {
                 const kindMeta = sourceKindMap[project.source_kind] ?? sourceKindMap.blank
                 const KindIcon = kindMeta.icon
                 return (
-                  <article className="project-card" key={project.project_id} aria-label={project.name}>
-                    <div className="project-card-media">
-                      <button
-                        className="project-preview"
-                        type="button"
-                        disabled={busy || deleted || !project.head_revision_id}
-                        aria-label={`打开 ${project.name}`}
-                        onClick={() => void action(() => onOpen(project.project_id))}
-                      >
-                        {project.head_revision_id && !failedThumbnails.has(project.project_id) ? (
-                          <img
-                            loading="lazy"
-                            alt={`${project.name}缩略图`}
-                            src={`/api/v1/projects/${encodeURIComponent(project.project_id)}/thumbnail?revision_id=${encodeURIComponent(project.head_revision_id)}`}
-                            onError={() => setFailedThumbnails((current) => new Set(current).add(project.project_id))}
-                          />
-                        ) : (
-                          <div className="preview-placeholder">预览暂不可用</div>
-                        )}
-                      </button>
-                      <span className={`project-kind-badge ${kindMeta.className}`}>
-                        <KindIcon aria-hidden="true" />
-                        <span>{kindMeta.label}</span>
-                      </span>
-                    </div>
-
-                    <div className="project-card-body">
+                  <article className={`project-card${selectedProject?.project_id === project.project_id ? ' selected' : ''}`} key={project.project_id} aria-label={project.name}>
+                    <button
+                      className="project-select-button"
+                      type="button"
+                      aria-pressed={selectedProject?.project_id === project.project_id}
+                      onClick={() => setSelectedId(project.project_id)}
+                      onDoubleClick={() => { if (!deleted && project.head_revision_id) void action(() => onOpen(project.project_id)) }}
+                    >
+                      <div className="project-card-media">
+                          {project.head_revision_id && !failedThumbnails.has(project.project_id) ? (
+                            <img
+                              loading="lazy"
+                              alt=""
+                              src={thumbnailUrl(project)}
+                              onError={() => setFailedThumbnails((current) => new Set(current).add(project.project_id))}
+                            />
+                          ) : (
+                            <div className="preview-placeholder"><ImageBrokenIcon size={24} aria-hidden="true" /><span>预览暂不可用</span></div>
+                          )}
+                      </div>
+                      <div className="project-card-body">
                       <div className="project-card-title">
                         <h2 title={project.name}>{project.name}</h2>
+                        <span className={`project-kind-badge ${kindMeta.className}`} title={kindMeta.label}>
+                          <KindIcon aria-hidden="true" />
+                          <span>{kindMeta.shortLabel}</span>
+                        </span>
                       </div>
 
                       <p className="project-meta-line">
-                        {project.width ?? '—'} × {project.height ?? '—'} 格 · {project.fabric_count ?? '—'} CT · {project.color_count ?? 0} 色
+                        <span>{project.width ?? '-'} × {project.height ?? '-'}</span>
+                        <span>{project.fabric_count ?? '-'} CT</span>
+                        <span>{project.color_count ?? 0} 色</span>
                       </p>
 
                       <time dateTime={new Date(project.updated_at_ms).toISOString()}>
                         更新于 {new Date(project.updated_at_ms).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })}
                       </time>
-
-                      <div className="project-card-actions">
-                        {deleted ? (
-                          <button
-                            className="quiet-button restore-btn"
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void action(async () => {
-                              await restoreProject(project.project_id)
-                              refresh()
-                            })}
-                          >
-                            <IconRefresh aria-hidden="true" />
-                            <span>恢复图纸</span>
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              className="primary-button open-btn"
-                              type="button"
-                              disabled={busy || !project.head_revision_id}
-                              onClick={() => void action(() => onOpen(project.project_id))}
-                            >
-                              打开图纸
-                            </button>
-                            <button
-                              className="quiet-button edit-btn"
-                              type="button"
-                              aria-label={`重命名 ${project.name}`}
-                              title="重命名"
-                              disabled={busy || !project.head_revision_id}
-                              onClick={() => { setRenaming(project); setName(project.name) }}
-                            >
-                              <IconEdit aria-hidden="true" />
-                              <span>重命名</span>
-                            </button>
-                            <button
-                              className="quiet-button delete-btn"
-                              type="button"
-                              aria-label={`将 ${project.name} 移入回收站`}
-                              title="移入回收站"
-                              disabled={busy}
-                              onClick={() => {
-                                if (!window.confirm(`将「${project.name}」移入回收站？之后可以恢复。`)) return
-                                void action(async () => {
-                                  await deleteProject(project.project_id)
-                                  onRemoved(project.project_id)
-                                  refresh()
-                                })
-                              }}
-                            >
-                              <IconTrash aria-hidden="true" />
-                              <span>移入回收站</span>
-                            </button>
-                          </>
-                        )}
                       </div>
-                    </div>
+                    </button>
                   </article>
                 )
               })}
+            </div>
+            {selectedProject && (
+              <aside className="project-detail" aria-label={`${selectedProject.name} 详情`} aria-live="polite">
+                <div className="project-detail-media">
+                  {selectedProject.head_revision_id && !selectedThumbnailFailed ? (
+                    <img
+                      src={thumbnailUrl(selectedProject)}
+                      alt={`${selectedProject.name} 图纸预览`}
+                      onError={() => setFailedThumbnails((current) => new Set(current).add(selectedProject.project_id))}
+                    />
+                  ) : (
+                    <div className="preview-placeholder"><ImageBrokenIcon size={30} aria-hidden="true" /><span>预览暂不可用</span></div>
+                  )}
+                </div>
+                <div className="project-detail-heading">
+                  <div><h2>{selectedProject.name}</h2><span>{sourceKindMap[selectedProject.source_kind].label}</span></div>
+                  {!deleted && <div className="project-detail-actions">
+                    <button type="button" aria-label={`重命名 ${selectedProject.name}`} title="重命名" disabled={busy || !selectedProject.head_revision_id} onClick={() => { setRenaming(selectedProject); setName(selectedProject.name) }}>
+                      <PencilSimpleIcon size={18} aria-hidden="true" />
+                    </button>
+                    <button type="button" aria-label={`将 ${selectedProject.name} 移入回收站`} title="移入回收站" disabled={busy} onClick={() => {
+                      if (!window.confirm(`将「${selectedProject.name}」移入回收站？之后可以恢复。`)) return
+                      void action(async () => {
+                        await deleteProject(selectedProject.project_id)
+                        onRemoved(selectedProject.project_id)
+                        setSelectedId(null)
+                        refresh()
+                      })
+                    }}>
+                      <TrashIcon size={18} aria-hidden="true" />
+                    </button>
+                  </div>}
+                </div>
+
+                {deleted ? (
+                  <button className="primary-button project-continue" type="button" disabled={busy} onClick={() => void action(async () => {
+                    await restoreProject(selectedProject.project_id)
+                    setSelectedId(null)
+                    refresh()
+                  })}>
+                    <ArrowsClockwiseIcon size={18} aria-hidden="true" />恢复图纸
+                  </button>
+                ) : (
+                  <div className="project-open-block">
+                    <button className="primary-button project-continue" type="button" disabled={busy || !selectedProject.head_revision_id} onClick={() => void action(() => onOpen(selectedProject.project_id))}>
+                      <EyeIcon size={19} weight="bold" aria-hidden="true" />打开图纸
+                    </button>
+                    <p>进入看图绣制，可缩放、查线色并记录完成进度。</p>
+                  </div>
+                )}
+
+                <div className="project-detail-section">
+                  <h3>图纸信息</h3>
+                  <dl>
+                    <div><dt><GridFourIcon size={17} aria-hidden="true" />图纸尺寸</dt><dd>{selectedProject.width ?? '-'} × {selectedProject.height ?? '-'}</dd></div>
+                    <div><dt><HashIcon size={17} aria-hidden="true" />布料规格</dt><dd>{selectedProject.fabric_count ?? '-'} CT</dd></div>
+                    <div><dt><PaletteIcon size={17} aria-hidden="true" />颜色数量</dt><dd>{selectedProject.color_count ?? 0} 色</dd></div>
+                    <div><dt><ClockIcon size={17} aria-hidden="true" />最后编辑</dt><dd>{new Date(selectedProject.updated_at_ms).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}</dd></div>
+                  </dl>
+                </div>
+
+                <div className="project-privacy-note"><LockSimpleIcon size={18} aria-hidden="true" /><div><strong>图纸仅自己可见</strong><p>原图、图纸和版本记录都保存在你的账号下。</p></div></div>
+              </aside>
+            )}
             </div>
           )}
 
@@ -336,7 +375,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                 <h2 id="rename-title">重命名图纸</h2>
                 <p>为你的刺绣作品设置一个清晰易记的名字。</p>
               </div>
-              <button type="button" aria-label="关闭" onClick={() => setRenaming(null)}>×</button>
+              <button type="button" aria-label="关闭" onClick={() => setRenaming(null)}><XIcon size={20} aria-hidden="true" /></button>
             </div>
             <form
               onSubmit={(event) => {

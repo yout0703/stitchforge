@@ -69,7 +69,7 @@ def _draw_summary_page(
     unicode_supported: bool,
     page_number: int,
     color: bool,
-) -> None:
+) -> int:
     stats = calculate_statistics(document)
     title = _safe_text(document["metadata"]["title"], unicode_supported)
     is_fixture = document["metadata"]["purpose"] == "test_fixture"
@@ -106,6 +106,18 @@ def _draw_summary_page(
         recipe = recipe_by_id[item["recipe_id"]]
         if recipe["id"] not in count_by_recipe:
             continue
+        if y < 22 * mm:
+            _page_footer(canvas, font, page_number)
+            canvas.showPage()
+            page_number += 1
+            y = A4[1] - 24 * mm
+            canvas.setFillColor(black)
+            canvas.setFont(font, 12)
+            canvas.drawString(
+                18 * mm, y, _safe_text("图例 / Legend (continued)", unicode_supported)
+            )
+            y -= 12 * mm
+            canvas.setFont(font, 9)
         component = recipe["components"][0]
         material = material_by_id[component["material_id"]]
         symbol = symbol_for_id(item["symbol_id"])
@@ -115,7 +127,10 @@ def _draw_summary_page(
         rgb = tuple(int(display_color[offset : offset + 2], 16) for offset in (1, 3, 5))
         luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
         canvas.setFillColor(white if color and luminance < 100 else black)
+        symbol_width = pdfmetrics.stringWidth(symbol, font, 9)
+        canvas.setFont(font, min(9, 9 * 4 * mm / max(symbol_width, 1)))
         canvas.drawCentredString(20.5 * mm, y + 0.2 * mm, symbol)
+        canvas.setFont(font, 9)
         canvas.setFillColor(black)
         label = (
             f"{material['brand']} {material['series']} {material['code']} · "
@@ -125,6 +140,7 @@ def _draw_summary_page(
         y -= 7 * mm
     _page_footer(canvas, font, page_number)
     canvas.showPage()
+    return page_number + 1
 
 
 def _draw_chart_page(
@@ -181,8 +197,9 @@ def _draw_chart_page(
             rgb = tuple(int(display_color[offset : offset + 2], 16) for offset in (1, 3, 5))
             luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
             canvas.setFillColor(white if color and luminance < 100 else black)
-            canvas.setFont(font, 5.7)
             symbol = symbol_for_id(legend_by_recipe[recipe["id"]]["symbol_id"])
+            symbol_width = pdfmetrics.stringWidth(symbol, font, 5.7)
+            canvas.setFont(font, min(5.7, 5.7 * (cell - 1.5) / max(symbol_width, 1)))
             canvas.drawCentredString(x + cell / 2, y + cell * 0.25, symbol)
 
     canvas.setFillColor(black)
@@ -227,8 +244,7 @@ def export_chart_pdf(
     canvas.setTitle(_safe_text(document["metadata"]["title"], unicode_supported))
     canvas.setAuthor("StitchForge")
     page_number = 1
-    _draw_summary_page(canvas, document, font, unicode_supported, page_number, color)
-    page_number += 1
+    page_number = _draw_summary_page(canvas, document, font, unicode_supported, page_number, color)
     column_ranges = page_ranges(document["grid"]["width"], PAGE_COLS)
     row_ranges = page_ranges(document["grid"]["height"], PAGE_ROWS)
     for page_row, row_range in enumerate(row_ranges):

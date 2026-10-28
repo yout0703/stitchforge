@@ -46,6 +46,21 @@ def test_pdf_has_summary_and_chart_pages(tmp_path, minimal_document: dict) -> No
     assert "rows 1-3" in text
 
 
+def test_many_colour_pdf_keeps_legend_on_visible_pages(tmp_path, many_color_document):
+    import pdfplumber
+
+    output = export_chart_pdf(many_color_document, tmp_path / "77-colours.pdf", color=False)
+    with pdfplumber.open(output) as pdf:
+        assert len(pdf.pages) > 2
+        legend_pages = pdf.pages[:-1]
+        text = "\n".join(page.extract_text() or "" for page in legend_pages)
+        for material in many_color_document["materials"]:
+            assert material["code"] in text
+        for page in legend_pages:
+            assert all(0 <= char["top"] < char["bottom"] <= page.height for char in page.chars)
+        assert "AM" in (pdf.pages[-1].extract_text() or "")
+
+
 def test_pdf_embeds_unicode_font(tmp_path, minimal_document: dict) -> None:
     output = export_chart_pdf(minimal_document, tmp_path / "chart.pdf", color=True)
     reader = PdfReader(output)

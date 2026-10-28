@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { XIcon } from '@phosphor-icons/react'
 import { downloadChart } from '../lib/api'
 
 export function DownloadPanel({ title, dirty, onPrepare, onClose }: {
@@ -7,9 +8,9 @@ export function DownloadPanel({ title, dirty, onPrepare, onClose }: {
   onPrepare: () => Promise<{ projectId: string; headRevisionId: string }>
   onClose: () => void
 }) {
-  const [busy, setBusy] = useState<'oxs' | 'png' | null>(null)
+  const [busy, setBusy] = useState<'oxs' | 'xsd' | 'png' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [file, setFile] = useState<{ url: string; name: string; format: 'oxs' | 'png' } | null>(null)
+  const [file, setFile] = useState<{ url: string; name: string; format: 'oxs' | 'xsd' | 'png' } | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const objectUrl = useRef<string | null>(null)
   const mounted = useRef(false)
@@ -23,7 +24,7 @@ export function DownloadPanel({ title, dirty, onPrepare, onClose }: {
     }
   }, [])
 
-  async function prepare(format: 'oxs' | 'png') {
+  async function prepare(format: 'oxs' | 'xsd' | 'png') {
     if (preparing.current) return
     preparing.current = true
     setBusy(format)
@@ -59,12 +60,12 @@ export function DownloadPanel({ title, dirty, onPrepare, onClose }: {
     onCancel={(event) => { event.preventDefault(); if (!busy) onClose() }}>
     <div className="import-heading">
       <div><h2 id="download-title">下载图纸</h2><p>免费下载，不消耗生成次数。</p></div>
-      <button type="button" aria-label="关闭下载" disabled={!!busy} onClick={onClose}>×</button>
+      <button type="button" aria-label="关闭下载" disabled={!!busy} onClick={onClose}><XIcon size={20} aria-hidden="true" /></button>
     </div>
     <div className="download-content">
       {dirty && <p className="billing-notice">下载前会先保存当前修改。</p>}
       <div className="download-option">
-        <h3>完整图纸图片 · PNG</h3>
+        <h3>完整图纸图片（PNG）</h3>
         <p>包含全图、彩色针格、字母符号、坐标刻度，以及符号与绣线色号对照表。保留全部颜色，不受当前缩放或高亮影响。</p>
         <button className="primary-button" type="button" disabled={!!busy} onClick={() => void prepare('png')}>下载完整图片</button>
       </div>
@@ -74,11 +75,17 @@ export function DownloadPanel({ title, dirty, onPrepare, onClose }: {
         <p className="download-note">OXS 不包含编辑历史、区域锁定或来源记录；其他软件可能使用自己的符号样式。</p>
         <button className="quiet-button" type="button" disabled={!!busy} onClick={() => void prepare('oxs')}>下载 OXS</button>
       </div>
-      {busy && <p role="status">正在准备{busy === 'png' ? '完整图片，大图可能需要一些时间' : 'OXS 文件'}…</p>}
+      <div className="download-option">
+        <h3>XSD 图纸文件</h3>
+        <p>Pattern Maker v4 全针格式，包含针格、线色、股数和绣布 CT。</p>
+        <p className="download-note">不包含编辑历史、区域锁定、来源记录、裁布边距和针方向。标题和作者最多 40 字节；自定义线色的完整名称保存在备注中。符号和中文显示取决于目标软件，尚未实测 Pattern Maker / Saga 导入。</p>
+        <button className="quiet-button" type="button" disabled={!!busy} onClick={() => void prepare('xsd')}>下载 XSD</button>
+      </div>
+      {busy && <p role="status">正在准备{busy === 'png' ? '完整图片，大图可能需要一些时间' : `${busy.toUpperCase()} 文件`}…</p>}
       {error && <p className="import-error" role="alert">{error}</p>}
       {file && <div className="download-ready" role="status">
         <p>文件已准备好。如果没有自动下载，请点击下方保存。</p>
-        <a className="primary-button" href={file.url} download={file.name}>保存{file.format === 'png' ? ' PNG 图片' : ' OXS 文件'}</a>
+        <a className="primary-button" href={file.url} download={file.name}>保存{file.format === 'png' ? ' PNG 图片' : ` ${file.format.toUpperCase()} 文件`}</a>
         {file.format === 'png' && <a href={file.url} target="_blank" rel="noopener">打开图片预览</a>}
         <small>手机上可使用浏览器的下载、保存到文件或图片预览中的保存功能。</small>
       </div>}

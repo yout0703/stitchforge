@@ -3,38 +3,44 @@ import type { FormEvent } from 'react'
 import './App.css'
 import { useProjectDraft } from './hooks/useProjectDraft'
 import { useGeneration } from './hooks/useGeneration'
+import { GenerationProgress } from './components/GenerationProgress'
 import { AccountPanel } from './components/AccountPanel'
 import { DownloadPanel } from './components/DownloadPanel'
 import { BlankProjectDialog } from './components/BlankProjectDialog'
 import type { User } from './lib/account'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { PatternCanvas } from './components/PatternCanvas'
+import { AppSidebar } from './components/AppSidebar'
 import {
   ApiError,
   createProject,
   createRevision,
   getProject,
   getRevision,
-  importOxsProject,
+  importPatternProject,
 } from './lib/api'
 import { createEditor, editorReducer, isDirty } from './lib/editor'
 import { makeDemoPattern } from './lib/demoPattern'
 import { recipeSymbols } from './lib/symbols'
 import { selectionIndices } from './lib/selection'
 import {
-  IconBrush,
-  IconBucket,
-  IconCredit,
-  IconDownload,
-  IconEraser,
-  IconFileCode,
-  IconFolder,
-  IconHand,
-  IconMarquee,
-  IconPipette,
-  IconPlus,
-  IconSparkles,
-} from './components/Icons'
+  BoundingBoxIcon as IconMarquee,
+  DownloadSimpleIcon as IconDownload,
+  EraserIcon as IconEraser,
+  EyedropperIcon as IconPipette,
+  FileCodeIcon as IconFileCode,
+  FolderOpenIcon as IconFolder,
+  HandIcon as IconHand,
+  EyeIcon,
+  MagicWandIcon as IconSparkles,
+  PaintBrushIcon as IconBrush,
+  PaintBucketIcon as IconBucket,
+  PaletteIcon,
+  PencilSimpleIcon,
+  PlusIcon as IconPlus,
+  UserCircleIcon,
+  XIcon,
+} from '@phosphor-icons/react'
 import type {
   CellSelection,
   ImageConversionResponse,
@@ -74,7 +80,8 @@ function App({ user, onLogout, onAccountRefresh }: {
   user: User; onLogout: () => Promise<void>; onAccountRefresh: () => Promise<void>
 }) {
   const generation = useGeneration(user.user_id)
-  const autoOpenGeneration = useRef<{ epoch: number; document: PatternDocument } | null>(null)
+  const openedGenerationJob = useRef<string | null>(null)
+  const generationPanelDismissed = useRef(false)
   const LAST_PROJECT_KEY = `stitchforge.lastProjectId.${user.user_id}`
   const [accountOpen, setAccountOpen] = useState(() => window.location.hash.startsWith('#billing'))
   const [downloadOpen, setDownloadOpen] = useState(false)
@@ -99,6 +106,8 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [selectedRecipe, setSelectedRecipe] = useState(1)
   const [hoveredCell, setHoveredCell] = useState<{ col: number; row: number } | null>(null)
   const [pickedCell, setPickedCell] = useState<{ col: number; row: number; projectId: string | null } | null>(null)
+  const [focusTarget, setFocusTarget] = useState<{ col: number; row: number; token: number } | null>(null)
+  const focusToken = useRef(0)
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [createState, setCreateState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [saveState, setSaveState] = useState<'idle' | 'loading' | 'error'>('idle')
@@ -113,11 +122,14 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [fitRequest, setFitRequest] = useState(0)
   const [sourceImageUrl, setSourceImageUrl] = useState<string | null>(null)
   const [importKind, setImportKind] = useState<'image' | 'oxs'>('image')
+  const [xsdSelected, setXsdSelected] = useState(false)
+  const [legacyEncoding, setLegacyEncoding] = useState('cp1251')
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
-  const [importState, setImportState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [importState, setImportState] = useState<'idle' | 'loading' | 'generating' | 'error'>('idle')
   const importDialogRef = useRef<HTMLElement>(null)
   const importBusyRef = useRef(false)
+  const generatingRef = useRef(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [conversionSummary, setConversionSummary] = useState<ImageConversionResponse | null>(null)
   const [restoreState, setRestoreState] = useState<'idle' | 'loading' | 'error'>(() =>
@@ -193,7 +205,10 @@ function App({ user, onLogout, onAccountRefresh }: {
     }
   }, [mobileCreateOpen])
 
-  useEffect(() => { importBusyRef.current = importState === 'loading' }, [importState])
+  useEffect(() => {
+    importBusyRef.current = importState === 'loading'
+    generatingRef.current = generation.running
+  }, [importState, generation.running])
   useEffect(() => {
     if (!importOpen) return
     const previousFocus = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
@@ -202,7 +217,10 @@ function App({ user, onLogout, onAccountRefresh }: {
     function keepFocusInside(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (!importBusyRef.current) setImportOpen(false)
+        if (importBusyRef.current) return
+        if (generatingRef.current) generationPanelDismissed.current = true
+        else setImportState('idle')
+        setImportOpen(false)
         return
       }
       if (event.key !== 'Tab' || !dialog) return
@@ -227,14 +245,32 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   const symbols = useMemo(() => recipeSymbols({ recipes: document.recipes, legend: document.legend }), [document.recipes, document.legend])
   const recipeCounts = editor.recipeCounts
+  const totalStitches = useMemo(
+    () => document.full_stitches.cells.reduce((total, recipe) => total + (recipe > 0 ? 1 : 0), 0),
+    [document.full_stitches.cells],
+  )
+  const highlightedIndices = useMemo(() => {
+    if (highlightedRecipe === null) return []
+    const indices: number[] = []
+    document.full_stitches.cells.forEach((recipe, index) => {
+      if (recipe === highlightedRecipe) indices.push(index)
+    })
+    return indices
+  }, [document.full_stitches.cells, highlightedRecipe])
   const rareColorSummary = document.extensions?.['stitchforge.rare_colors'] as RareColorSummary | undefined
+  const imageGenerating = importKind === 'image' && (importState === 'generating' || generation.running)
 
   const activeCell = hoveredCell ?? (pickedCell?.projectId === (session?.projectId ?? null) ? pickedCell : null)
   const hoveredRecipeIndex = activeCell ? document.full_stitches.cells[activeCell.row * document.grid.width + activeCell.col] : null
   const hoveredMaterial = palette.find((recipe) => recipe.index === hoveredRecipeIndex)?.material
+  const pickedLinearIndex = pickedCell?.projectId === (session?.projectId ?? null)
+    ? pickedCell.row * document.grid.width + pickedCell.col
+    : null
+  const highlightedPosition = pickedLinearIndex === null ? -1 : highlightedIndices.indexOf(pickedLinearIndex)
   const planningReport = conversionSummary?.planning_report ??
     (document.extensions?.['stitchforge.import_plan'] as ImageConversionResponse['planning_report'] | undefined)
   const embeddedOxsPalette = (document.provenance as { catalog_snapshot_id?: string } | undefined)?.catalog_snapshot_id === 'oxs_embedded_palette'
+  const embeddedXsdPalette = (document.provenance as { catalog_snapshot_id?: string } | undefined)?.catalog_snapshot_id === 'xsd_embedded_palette'
   const basicPalette = document.materials.length > 0 && document.materials.every(material => material.brand === '自定义' && material.id.startsWith('m_basic_'))
 
   useEffect(() => {
@@ -309,6 +345,8 @@ function App({ user, onLogout, onAccountRefresh }: {
         dispatch({ type: 'restore', state: restored.editor })
         setDraftConflict(restored.conflict)
         setHighlightedRecipe(null)
+        setPickedCell(null)
+        setFocusTarget(null)
         setSession({
           projectId: project.project_id,
           headRevisionId: restored.baseRevisionId,
@@ -346,6 +384,33 @@ function App({ user, onLogout, onAccountRefresh }: {
     }
   }
 
+  function focusPatternCell(index: number) {
+    const col = index % document.grid.width
+    const row = Math.floor(index / document.grid.width)
+    setPickedCell({ col, row, projectId: session?.projectId ?? null })
+    focusToken.current += 1
+    setFocusTarget({ col, row, token: focusToken.current })
+  }
+
+  function selectRecipeForReading(recipeIndex: number) {
+    if (highlightedRecipe === recipeIndex) {
+      setHighlightedRecipe(null)
+      return
+    }
+    setHighlightedRecipe(recipeIndex)
+    const firstIndex = document.full_stitches.cells.findIndex((recipe) => recipe === recipeIndex)
+    if (firstIndex >= 0) focusPatternCell(firstIndex)
+  }
+
+  function navigateHighlightedRecipe(direction: -1 | 1) {
+    if (!highlightedIndices.length) return
+    const currentPosition = pickedLinearIndex === null ? -1 : highlightedIndices.indexOf(pickedLinearIndex)
+    const nextPosition = currentPosition < 0
+      ? (direction > 0 ? 0 : highlightedIndices.length - 1)
+      : (currentPosition + direction + highlightedIndices.length) % highlightedIndices.length
+    focusPatternCell(highlightedIndices[nextPosition])
+  }
+
   function showLibrary() {
     if (dirty && !window.confirm('当前图纸有未保存修改，返回图纸库？重新打开时将尝试恢复本地草稿。')) return
     setMobileInspectorOpen(false)
@@ -373,6 +438,8 @@ function App({ user, onLogout, onAccountRefresh }: {
     setSelection(null)
     setHoveredCell(null)
     setHighlightedRecipe(null)
+    setPickedCell(null)
+    setFocusTarget(null)
     setConversionSummary(null)
     setImportNotice(null)
     setRestoreState('idle')
@@ -399,6 +466,8 @@ function App({ user, onLogout, onAccountRefresh }: {
       setDraftConflict(false)
       dispatch({ type: 'reset', document: created.initial_revision.document })
       setHighlightedRecipe(null)
+      setPickedCell(null)
+      setFocusTarget(null)
       setSelectedRecipe(created.initial_revision.document.recipes[0]?.index ?? 0)
       setTool('paint')
       setSelection(null)
@@ -432,12 +501,13 @@ function App({ user, onLogout, onAccountRefresh }: {
       ? '本地草稿保存失败，继续导入会丢失未保存修改。建议取消并先保存版本，仍要继续？'
       : '当前图纸有未保存修改，继续导入新图纸？重新打开时将尝试恢复本地草稿。')) return
     const epoch = ++operationEpoch.current
-    setImportState('loading')
+    setImportState(importKind === 'image' ? 'generating' : 'loading')
     setImportError(null)
+    generationPanelDismissed.current = false
     try {
       if (importKind === 'oxs') {
-        if (file.size > 16 * 1024 * 1024) throw new Error('OXS 文件超过 16 MiB 限制')
-        const imported = await importOxsProject(file)
+        if (file.size > 16 * 1024 * 1024) throw new Error('图纸文件超过 16 MiB 限制')
+        const imported = await importPatternProject(file, legacyEncoding)
         if (epoch !== operationEpoch.current) return
         setDraftConflict(false)
         dispatch({ type: 'reset', document: imported.initial_revision.document })
@@ -448,6 +518,8 @@ function App({ user, onLogout, onAccountRefresh }: {
         setConversionSummary(null)
         setImportNotice(imported.report.issues.map((issue) => issue.message).join('；') || null)
         setHighlightedRecipe(null)
+        setPickedCell(null)
+        setFocusTarget(null)
         setSelection(null)
         setViewMode('pattern')
         setMode('view')
@@ -460,11 +532,10 @@ function App({ user, onLogout, onAccountRefresh }: {
       }
       if (user.credits < 1 && !generation.pending) throw new Error('生成次数不足，请先充值。')
       if (file.size > 20 * 1024 * 1024) throw new Error('图片文件超过 20 MiB 限制')
-      autoOpenGeneration.current = { epoch, document }
+      generationPanelDismissed.current = false
       await generation.start(file)
       if (epoch !== operationEpoch.current) return
-      setImportOpen(false)
-      setImportState('idle')
+      setImportState('generating')
     } catch (error) {
       if (epoch !== operationEpoch.current) return
       setImportState('error')
@@ -474,26 +545,38 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   useEffect(() => {
     const result = generation.job?.result
-    const target = autoOpenGeneration.current
-    if (generation.job?.state !== 'SUCCEEDED' || !result || !target) return
-    autoOpenGeneration.current = null
-    if (target.epoch !== operationEpoch.current || target.document !== document) return
-    dispatch({ type: 'reset', document: result.revision.document })
+    if (generation.job?.state !== 'SUCCEEDED' || !result?.revision?.document) return
+    if (openedGenerationJob.current === generation.job.job_id) return
+    if (dirty && session && session.projectId !== generation.job.project_id) return
+    openedGenerationJob.current = generation.job.job_id
+    const next = result.revision.document
+    dispatch({ type: 'reset', document: next })
     setSession({ projectId: generation.job.project_id, headRevisionId: result.revision.revision_id })
     window.localStorage.setItem(LAST_PROJECT_KEY, generation.job.project_id)
-    setSourceImageUrl(result.normalized_asset.url)
-    setConversionSummary(result)
-    setSelectedRecipe(result.revision.document.recipes[0]?.index ?? 0)
+    setSourceImageUrl(result.normalized_asset?.url ?? sourceUrlFromDocument(next))
+    setConversionSummary(result.statistics ? result : null)
+    setSelectedRecipe(next.recipes[0]?.index ?? 0)
     setHighlightedRecipe(null)
+    setPickedCell(null)
+    setFocusTarget(null)
     setSelection(null)
     setMode('view')
     setViewMode('pattern')
     setFitRequest(value => value + 1)
     setLibraryOpen(false)
     setDraftConflict(false)
+    setImportOpen(false)
+    setImportState('idle')
     generation.acknowledge()
     void onAccountRefresh()
-  }, [generation, document, LAST_PROJECT_KEY, onAccountRefresh])
+  }, [generation, dirty, session, LAST_PROJECT_KEY, onAccountRefresh])
+
+  useEffect(() => {
+    if (!generation.pending || generation.job?.state === 'SUCCEEDED' || generationPanelDismissed.current || importOpen) return
+    setImportKind('image')
+    setImportOpen(true)
+    setImportState(generation.job?.state === 'FAILED' ? 'error' : 'generating')
+  }, [generation.pending, generation.job?.state, importOpen])
 
   async function openGeneratedProject() {
     if (!generation.job || generation.job.state !== 'SUCCEEDED') return
@@ -581,75 +664,40 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   return (
     <><a className="skip-link" href="#main-content" inert={mobileLayout && mobileInspectorOpen}>跳到主要内容</a><main id="main-content" className={`workbench-shell${libraryOpen ? ' library-open' : ''}`}>
+      <AppSidebar
+        user={user}
+        libraryOpen={libraryOpen}
+        busy={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
+        onShowLibrary={showLibrary}
+        onImportImage={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}
+        onImportOxs={() => { setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}
+        onCreateBlank={requestBlankProject}
+        onOpenAccount={() => setAccountOpen(true)}
+      />
       <header className={`app-header${libraryOpen ? ' library-app-header' : ''}`} inert={mobileLayout && mobileInspectorOpen}>
-        <div className="brand-block">
-          <span className="brand-mark" aria-hidden="true">SF</span>
-          <div>
-            <strong>StitchForge</strong>
-            <span>十字绣打版工作台</span>
-          </div>
-        </div>
         <div className="document-title">
           <strong>{libraryOpen ? '图纸库' : document.metadata.title}</strong>
-          <span>{libraryOpen ? '管理你的所有作品' : dirty ? '有未保存修改' : session ? '已保存到账号' : '示例预览'}</span>
+          <span>{libraryOpen ? '查看和打开你的图纸' : mode === 'view' ? '看图绣制 · 选择线色并定位针位' : dirty ? '编辑中 · 有未保存修改' : session ? '编辑中 · 已保存到账号' : '示例预览'}</span>
         </div>
         <div className="mobile-document-title">
           <h1>{libraryOpen ? '我的图纸' : document.metadata.title}</h1>
-          <span>{libraryOpen ? '作品库' : `${document.grid.width} × ${document.grid.height} 格 · ${dirty ? '未保存' : session ? '已保存' : '预览'}`}</span>
+          <span>{libraryOpen ? '查看与继续绣制' : mode === 'view' ? `${totalStitches} 针 · ${document.recipes.length} 色` : `${document.grid.width} × ${document.grid.height} 格 · ${dirty ? '未保存' : '编辑中'}`}</span>
         </div>
         <div className="header-actions">
-          <button className="quiet-button account-button" type="button" disabled={importState === 'loading'} onClick={() => setAccountOpen(true)}>
-            <IconCredit aria-hidden="true" />
-            <span>{user.credits} 次<span className="account-label-suffix"> / 账号</span></span>
-          </button>
-          {!libraryOpen && <button className="quiet-button" type="button" disabled={saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || !!editor.active} onClick={showLibrary}>
-            <IconFolder aria-hidden="true" />
-            <span>图纸库</span>
-          </button>}
           {(createState === 'error' || saveState === 'error') && (
             <span className="api-error">保存失败</span>
           )}
           {restoreState === 'loading' && <span className="restore-state">正在恢复上次图纸…</span>}
           {restoreState === 'error' && <span className="api-error">上次图纸无法打开</span>}
-          <button className="quiet-button library-create-action" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'} onClick={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}>
-            <IconSparkles aria-hidden="true" />
-            <span>导入图片</span>
-          </button>
-          <button className="quiet-button library-create-action" type="button" disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
-            onClick={() => { setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>
-            <IconFileCode aria-hidden="true" />
-            <span>导入 OXS</span>
-          </button>
-          <button
-            className="quiet-button new-project-button library-create-action"
-            type="button"
-            onClick={requestBlankProject}
-            disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
-          >
-            <IconPlus aria-hidden="true" />
-            <span>{createState === 'loading' ? '创建中…' : '新建图纸'}</span>
-          </button>
-          {libraryOpen && <button
-            ref={mobileCreateButtonRef}
-            className="primary-button mobile-create-button"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={mobileCreateOpen}
-            disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
-            onClick={() => setMobileCreateOpen(true)}
-          >
-            <IconPlus aria-hidden="true" />
-            <span>创建图纸</span>
-          </button>}
           {!libraryOpen && mode === 'edit' && <button
-            className="primary-button"
+            className="primary-button save-version-button"
             type="button"
             disabled={!dirty || !session || !!editor.active || saveState === 'loading'}
             onClick={saveRevision}
           >
             {saveState === 'loading' ? '保存中…' : '保存版本'}
           </button>}
-          {!libraryOpen && <button className="primary-button" type="button"
+          {!libraryOpen && <button className={`${mode === 'view' ? 'quiet-button' : 'primary-button'} download-button`} type="button"
             disabled={!session || !!editor.active || saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || importState === 'loading'}
             onClick={() => setDownloadOpen(true)}>
             <IconDownload aria-hidden="true" />
@@ -660,10 +708,12 @@ function App({ user, onLogout, onAccountRefresh }: {
 
       <div className="workbench-notices" inert={mobileLayout && mobileInspectorOpen}>
       {projectDraft.status.includes('失败') && <p className="draft-status api-error" role="alert">{projectDraft.status}</p>}
-      {(generation.pending || generation.status || generation.error) && <div className="generation-status" role="status">
-        <span>{generation.status}</span>
+      {(generation.pending || generation.status || generation.error) && !(importOpen && imageGenerating) && <div className="generation-status" role="status">
+        <span className={generation.running ? 'generation-live' : undefined}>{generation.status}{generation.running ? ` · ${generation.elapsedLabel}` : ''}</span>
+        {generation.progress.hint && <span className="generation-status-hint">{generation.progress.hint}</span>}
         {generation.error && <span className="api-error">{generation.error}</span>}
         {generation.job?.state === 'SUCCEEDED' && <button type="button" onClick={() => { void openGeneratedProject().catch(error => setSaveError(String(error))) }}>打开生成图纸</button>}
+        {generation.pending && generation.running && <button type="button" onClick={() => { generationPanelDismissed.current = false; setImportKind('image'); setImportOpen(true); setImportState('generating') }}>查看进度</button>}
         {generation.pending && generation.canAbandon && <button type="button" disabled={generation.uploading || generation.abandoning} onClick={() => {
           if (window.confirm('放弃本次未完成的上传？空白占位图纸将移入回收站，已完成的生成结果会保留。')) void generation.abandonUpload()
         }}>{generation.abandoning ? '正在确认…' : '放弃本次上传'}</button>}
@@ -695,9 +745,9 @@ function App({ user, onLogout, onAccountRefresh }: {
               setDraftConflict(true)
             }
           }
-        }} /> : <section className="workspace-grid">
-        <aside className="tool-rail" aria-label="绘图工具" inert={mobileLayout && mobileInspectorOpen}>
-          {mode === 'view' ? <div className="view-help"><strong>看图</strong><p>点击针格查线色</p><p>拖动平移<br />双指缩放</p></div> : TOOLS.map((item) => {
+        }} /> : <section className={`workspace-grid ${mode === 'view' ? 'reader-layout' : 'editor-layout'}`}>
+        {mode === 'edit' && <aside className="tool-rail" aria-label="绘图工具" inert={mobileLayout && mobileInspectorOpen}>
+          {TOOLS.map((item) => {
             const ToolIcon = TOOL_ICONS[item.id]
             return (
               <button
@@ -713,7 +763,7 @@ function App({ user, onLogout, onAccountRefresh }: {
               </button>
             )
           })}
-        </aside>
+        </aside>}
 
         <section className="canvas-stage" aria-label="图纸编辑区" inert={mobileLayout && mobileInspectorOpen}>
           <div className="canvas-toolbar">
@@ -758,13 +808,12 @@ function App({ user, onLogout, onAccountRefresh }: {
             </button>
           </div>
           <div className="edit-toolbar" role="toolbar" aria-label="查看和编辑操作">
-            <div className="mode-tabs">
-              <button type="button" aria-pressed={mode === 'view'} onClick={() => { setMode('view'); setSelection(null) }}>查看模式</button>
-              <button type="button" aria-pressed={mode === 'edit'} onClick={() => { setMode('edit'); setHighlightedRecipe(null) }}>编辑模式</button>
-            </div>
-            <span className="toolbar-divider" />
             {mode === 'edit' ? <>
-
+            <div className="editing-state"><PencilSimpleIcon size={16} aria-hidden="true" /><strong>正在编辑图纸</strong></div>
+            <button className="exit-edit-button" type="button" onClick={() => { setMode('view'); setSelection(null) }}>
+              退出编辑
+            </button>
+            <span className="toolbar-divider" />
             <button type="button" disabled={!editor.past.length || !!editor.active}
               title="撤销 · ⌘/Ctrl+Z" onClick={() => dispatch({ type: 'undo' })}>撤销</button>
             <button type="button" disabled={!editor.future.length || !!editor.active}
@@ -776,10 +825,18 @@ function App({ user, onLogout, onAccountRefresh }: {
               paintCells(selectionIndices(selection, document.grid.width), 0, '清空选区')}>清空选区</button>
             <button type="button" disabled={!selection} onClick={() => setSelection(null)}>取消选区</button>
             </> : <>
+              <div className="reader-mode-label">
+                <EyeIcon size={17} aria-hidden="true" />
+                <span><strong>看图模式</strong><small>点击针格查看线色</small></span>
+              </div>
+              <span className="toolbar-divider" />
               <button type="button" aria-pressed={showSymbols} onClick={() => setShowSymbols((current) => !current)}>符号显示</button>
               <button type="button" aria-pressed={showGrid} onClick={() => setShowGrid((current) => !current)}>网格</button>
               <button type="button" disabled={highlightedRecipe === null} onClick={() => setHighlightedRecipe(null)}>取消颜色高亮</button>
-              {highlightedRecipe !== null && <span className="color-count">当前颜色 {recipeCounts.get(highlightedRecipe) ?? 0} 针</span>}
+              {highlightedRecipe !== null && <span className="color-count">当前线色 {recipeCounts.get(highlightedRecipe) ?? 0} 针</span>}
+              <button className="edit-entry-button" type="button" onClick={() => { setMode('edit'); setHighlightedRecipe(null) }}>
+                <PencilSimpleIcon size={16} aria-hidden="true" />编辑图纸
+              </button>
             </>}
           </div>
           <div className={`comparison-workspace${viewMode === 'source' && sourceImageUrl ? ' is-comparing' : ''}`}>
@@ -798,9 +855,11 @@ function App({ user, onLogout, onAccountRefresh }: {
             <section className="comparison-pane pattern-pane" aria-label="图纸视图" key="pattern-pane">
               {viewMode === 'source' && sourceImageUrl && <div className="pane-heading"><strong>{mode === 'view' ? '图纸 · 点击查线色' : '图纸 · 可直接编辑'}</strong></div>}
               <PatternCanvas
-                key={`${document.grid.width}x${document.grid.height}:${fitRequest}`}
+                key={`${document.grid.width}x${document.grid.height}`}
                 document={document}
                 readOnly={mode === 'view'}
+                fitRequest={fitRequest}
+                focusTarget={focusTarget}
                 highlightedRecipe={highlightedRecipe}
                 showSymbols={showSymbols}
                 showGrid={showGrid}
@@ -828,13 +887,20 @@ function App({ user, onLogout, onAccountRefresh }: {
           aria-hidden={mobileLayout && !mobileInspectorOpen ? true : undefined} inert={mobileLayout && !mobileInspectorOpen}>
           <div className="mobile-inspector-heading">
             <span aria-hidden="true" />
-            <div><strong>线色与图纸信息</strong><small>{mode === 'view' ? '选择线色以高亮针格' : '选择线色后继续绘制'}</small></div>
-            <button type="button" aria-label="关闭线色与信息" onClick={() => closeMobileInspector()}>×</button>
+            <div><strong>{mode === 'view' ? '线色与坐标' : '线色与图纸信息'}</strong><small>{mode === 'view' ? '选择线色，高亮并定位针位' : '选择线色后继续绘制'}</small></div>
+            <button type="button" aria-label="关闭线色与信息" onClick={() => closeMobileInspector()}><XIcon size={20} aria-hidden="true" /></button>
           </div>
           <section className="inspector-section current-cell-panel" aria-label="实时针格信息">
-            <div className="section-heading"><h2>针格信息</h2><span>{mode === 'view' ? '查看' : '编辑'}</span></div>
+            <div className="section-heading"><h2>{mode === 'view' ? '坐标定位' : '针格信息'}</h2><span>{mode === 'view' ? '实时' : '编辑'}</span></div>
             <div className="live-cell-position">{activeCell ? `列 ${activeCell.col + 1} · 行 ${activeCell.row + 1}` : '点击针格查看线色'}</div>
             <p>{hoveredRecipeIndex === null ? '坐标与线色会实时显示在这里' : hoveredRecipeIndex === 0 ? '空白针格' : `${hoveredMaterial?.brand ?? 'DMC'} ${hoveredMaterial?.code ?? '未知'} · ${hoveredMaterial?.name ?? ''}`}</p>
+            {mode === 'view' && highlightedRecipe !== null && <div className="same-color-navigator">
+              <div><span>同色针位</span><strong>{highlightedPosition >= 0 ? highlightedPosition + 1 : '—'} / {highlightedIndices.length}</strong></div>
+              <div className="same-color-actions">
+                <button type="button" onClick={() => navigateHighlightedRecipe(-1)} disabled={!highlightedIndices.length}>上一个</button>
+                <button type="button" onClick={() => navigateHighlightedRecipe(1)} disabled={!highlightedIndices.length}>下一个</button>
+              </div>
+            </div>}
             {selection && <span className="selection-count">已选 {(selection.endCol - selection.startCol + 1) * (selection.endRow - selection.startRow + 1)} 格</span>}
           </section>
           <section className="inspector-section">
@@ -852,7 +918,7 @@ function App({ user, onLogout, onAccountRefresh }: {
                   aria-pressed={(mode === 'view' ? highlightedRecipe : selectedRecipe) === recipe.index}
                   onClick={() => {
                     if (mode === 'view') {
-                      setHighlightedRecipe((current) => current === recipe.index ? null : recipe.index)
+                      selectRecipeForReading(recipe.index)
                     } else {
                       setSelectedRecipe(recipe.index)
                       setTool('paint')
@@ -909,8 +975,8 @@ function App({ user, onLogout, onAccountRefresh }: {
               <div><dt>绣布规格</dt><dd>{document.fabric.count} CT</dd></div>
               <div><dt>色差方法</dt><dd>CIEDE2000</dd></div>
               <div><dt>邻域规则</dt><dd>4 邻域</dd></div>
-              <div><dt>色库来源</dt><dd>{embeddedOxsPalette ? 'OXS 内置线色' : basicPalette ? '基础自定义颜色（非实体色卡）' : 'DMC 2021 近似色'}</dd></div>
-              {conversionSummary && (
+              <div><dt>色库来源</dt><dd>{embeddedXsdPalette ? 'XSD 内置线色' : embeddedOxsPalette ? 'OXS 内置线色' : basicPalette ? '基础自定义颜色（非实体色卡）' : 'DMC 2021 近似色'}</dd></div>
+              {conversionSummary?.statistics && conversionSummary.palette_report && conversionSummary.motif_resolution && (
                 <>
                   <div>
                     <dt>针数</dt>
@@ -938,6 +1004,42 @@ function App({ user, onLogout, onAccountRefresh }: {
           </section>
         </aside>
       </section>}
+      <nav className="mobile-bottom-nav" aria-label="移动端主导航" inert={mobileLayout && mobileInspectorOpen}>
+        <button type="button" className={libraryOpen ? 'active' : ''} onClick={showLibrary}>
+          <IconFolder size={22} aria-hidden="true" />
+          <span>图纸库</span>
+        </button>
+        {libraryOpen ? (
+          <button
+            ref={mobileCreateButtonRef}
+            className="mobile-bottom-primary"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={mobileCreateOpen}
+            disabled={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
+            onClick={() => setMobileCreateOpen(true)}
+          >
+            <span><IconPlus size={22} weight="bold" aria-hidden="true" /></span>
+            <strong>新建</strong>
+          </button>
+        ) : (
+          <button type="button" className={mobileInspectorOpen ? 'active' : ''} onClick={() => setMobileInspectorOpen(true)}>
+            <PaletteIcon size={22} aria-hidden="true" />
+            <span>线色</span>
+          </button>
+        )}
+        {libraryOpen ? (
+          <button type="button" onClick={() => setAccountOpen(true)}>
+            <UserCircleIcon size={22} aria-hidden="true" />
+            <span>账号</span>
+          </button>
+        ) : (
+          <button type="button" disabled={!session || !!editor.active || saveState === 'loading'} onClick={() => setDownloadOpen(true)}>
+            <IconDownload size={22} aria-hidden="true" />
+            <span>下载</span>
+          </button>
+        )}
+      </nav>
       {mobileCreateOpen && (
         <div className="mobile-create-backdrop" role="presentation" onPointerDown={(event) => {
           if (event.target === event.currentTarget) closeMobileCreate()
@@ -945,14 +1047,14 @@ function App({ user, onLogout, onAccountRefresh }: {
           <section ref={mobileCreateSheetRef} className="mobile-create-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-create-title">
             <div className="mobile-create-heading">
               <div><h2 id="mobile-create-title">创建图纸</h2><p>选择最适合你的开始方式</p></div>
-              <button type="button" aria-label="关闭创建菜单" onClick={() => closeMobileCreate()}>×</button>
+              <button type="button" aria-label="关闭创建菜单" onClick={() => closeMobileCreate()}><XIcon size={20} aria-hidden="true" /></button>
             </div>
             <div className="mobile-create-options">
               <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('image'); setImportError(null); setImportOpen(true) }}>
                 <IconSparkles aria-hidden="true" /><span><strong>图片生成</strong><small>上传照片或插画 · 消耗 1 次</small></span>
               </button>
-              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('oxs'); setImportError(null); setImportOpen(true) }}>
-                <IconFileCode aria-hidden="true" /><span><strong>导入 OXS</strong><small>保留已有针格和线色 · 免费</small></span>
+              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}>
+                <IconFileCode aria-hidden="true" /><span><strong>导入 OXS / XSD</strong><small>保留已有针格和线色 · 免费</small></span>
               </button>
               <button type="button" onClick={() => { closeMobileCreate(false); requestBlankProject() }}>
                 <IconPlus aria-hidden="true" /><span><strong>空白图纸</strong><small>从一张空白针格开始</small></span>
@@ -966,28 +1068,72 @@ function App({ user, onLogout, onAccountRefresh }: {
           <section ref={importDialogRef} className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
             <div className="import-heading">
               <div>
-                <h2 id="import-title">{importKind === 'oxs' ? '导入 OXS 图纸' : '从图片自动生成图纸'}</h2>
-                <p>{importKind === 'oxs' ? '读取图纸中的针格、线色、CT 和股数，导入后直接查看。当前支持全针图纸。' : '选择图片即可。独立图案默认背景留白，自动收紧空白边距；简单图案使用更少的针格和线色。'}</p>
+                <h2 id="import-title">{importKind === 'oxs' ? '导入 OXS / XSD 图纸' : imageGenerating ? '正在生成图纸' : '从图片自动生成图纸'}</h2>
+                <p>{importKind === 'oxs' ? '读取针格、线色、CT 和股数。支持 OXS 和 Pattern Maker v4 XSD 全针图纸；含半针、回针或混线等内容时会提示暂不支持。' : imageGenerating ? '生成过程可以放到后台。刷新页面后仍会继续。' : '选择图片即可。独立图案默认背景留白，自动收紧空白边距；简单图案使用更少的针格和线色。'}</p>
               </div>
               <button
                 type="button"
-                aria-label="关闭"
+                aria-label={imageGenerating ? '放到后台' : '关闭'}
                 disabled={importState === 'loading'}
-                onClick={() => setImportOpen(false)}
+                onClick={() => {
+                  if (generation.running) generationPanelDismissed.current = true
+                  else {
+                    setImportState('idle')
+                    if (!generation.pending) generation.acknowledge()
+                  }
+                  setImportOpen(false)
+                }}
               >
-                ×
+                <XIcon size={20} aria-hidden="true" />
               </button>
             </div>
+            {imageGenerating ? (
+              <div className="generation-panel">
+                <GenerationProgress
+                  status={generation.status}
+                  error={generation.error}
+                  hint={generation.progress.hint}
+                  steps={generation.progress.steps}
+                  elapsedLabel={generation.elapsedLabel}
+                />
+                <div className="import-actions">
+                  {generation.canAbandon && <button type="button" disabled={generation.uploading || generation.abandoning} onClick={() => {
+                    if (window.confirm('放弃本次未完成的上传？空白占位图纸将移入回收站，已完成的生成结果会保留。')) void generation.abandonUpload()
+                  }}>{generation.abandoning ? '正在确认…' : '放弃本次上传'}</button>}
+                  {generation.error && <button type="button" disabled={generation.uploading || generation.abandoning} onClick={generation.retry}>继续查询</button>}
+                  {generation.job?.state === 'SUCCEEDED' && <button type="button" className="primary-button" onClick={() => { void openGeneratedProject().catch(error => setSaveError(String(error))) }}>打开生成图纸</button>}
+                  {generation.pending && !generation.canAbandon && generation.job?.state !== 'SUCCEEDED' && <button type="button" disabled={generation.uploading || generation.abandoning || generation.job?.state === 'CANCEL_REQUESTED'} onClick={() => { void generation.cancel() }}>取消生成</button>}
+                  <button type="button" onClick={() => {
+                    if (generation.running) generationPanelDismissed.current = true
+                    else {
+                      setImportState('idle')
+                      if (!generation.pending) generation.acknowledge()
+                    }
+                    setImportOpen(false)
+                  }}>{generation.running ? '放到后台' : '关闭'}</button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={importImage}>
               <p className="billing-notice">{importKind === 'oxs' ? '免费导入 · 查看与编辑不扣次数' : `本次消耗 1 次 · 当前剩余 ${user.credits} 次`}</p>
               {importKind === 'image' && user.credits < 1 && <button type="button" className="quiet-button" onClick={() => { setImportOpen(false); setAccountOpen(true) }}>查看充值与次数</button>}
               <label className="file-field">
-                <span>{importKind === 'oxs' ? 'OXS 文件' : '效果原图'}</span>
-                <input name="image" type="file" accept={importKind === 'oxs' ? '.oxs' : 'image/png,image/jpeg'} required disabled={importState === 'loading'} />
-                <small>{importKind === 'oxs' ? 'OXS，最大 16 MiB' : 'JPG 或 PNG，最大 20 MiB'}</small>
+                <span>{importKind === 'oxs' ? 'OXS / XSD 文件' : '效果原图'}</span>
+                <input name="image" type="file" accept={importKind === 'oxs' ? '.oxs,.xsd' : 'image/png,image/jpeg'} required disabled={importState === 'loading'}
+                  onChange={(event) => setXsdSelected(/\.xsd$/i.test(event.target.files?.[0]?.name ?? ''))} />
+                <small>{importKind === 'oxs' ? 'OXS 或 XSD，最大 16 MiB' : 'JPG 或 PNG，最大 20 MiB'}</small>
               </label>
+              {importKind === 'oxs' && xsdSelected && <label>
+                <span>XSD 旧版文字编码</span>
+                <select value={legacyEncoding} disabled={importState === 'loading'} onChange={(event) => setLegacyEncoding(event.target.value)}>
+                  <option value="cp1251">俄文（默认）</option>
+                  <option value="gb18030">简体中文</option>
+                  <option value="cp1252">西欧文字</option>
+                </select>
+                <small>UTF-8 自动识别；旧文件标题或线色名称乱码时可切换后重新导入。</small>
+              </label>}
               {importKind === 'image' && <p className="import-explanation">生成成功并保存后扣 1 次，失败不扣次数。根据服务配置，原图可能发送给受托模型服务商进行结构分析；详见 <a href="/privacy.html" target="_blank" rel="noopener">隐私政策</a>。</p>}
-              {importState === 'loading' && <p role="status">{importKind === 'oxs' ? '正在读取图纸…' : '正在分析图片并生成图纸，请稍候…'}</p>}
+              {importState === 'loading' && <p role="status">{importKind === 'oxs' ? '正在读取图纸…' : '正在上传图片…'}</p>}
               {importError && <p className="import-error" role="alert">{importError}</p>}
               <div className="import-actions">
                 <button type="button" disabled={importState === 'loading'} onClick={() => setImportOpen(false)}>
@@ -998,6 +1144,7 @@ function App({ user, onLogout, onAccountRefresh }: {
                 </button>
               </div>
             </form>
+            )}
           </section>
         </div>
       )}

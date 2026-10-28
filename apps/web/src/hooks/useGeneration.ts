@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, cancelGeneration, createProject, deleteProject, enqueueProjectImage, recoverGeneration, type GenerationJob } from '../lib/api'
+import { formatElapsed, generationProgress } from '../lib/generationProgress'
 
-interface PendingGeneration { requestKey: string; projectId: string; headRevisionId: string; sourceSha256: string }
-const STAGES: Record<string, string> = {
-  queued: '正在排队…', starting: '正在准备图片…', resuming: '正在恢复生成任务…',
-  normalization: '正在检查图片…', planning: '正在分析针格与结构…', sampling: '正在处理针格与底布…',
-  palette: '正在匹配线色…', quality: '正在检查图纸质量…', persisting: '正在保存图纸…',
-  completed: '图纸已生成', cancelled: '生成已取消，本次不扣次数。',
+interface PendingGeneration {
+  requestKey: string
+  projectId: string
+  headRevisionId: string
+  sourceSha256: string
+  startedAtMs?: number
 }
 
 export function useGeneration(userId: string) {
@@ -23,10 +24,18 @@ export function useGeneration(userId: string) {
   const [uploading, setUploading] = useState(false)
   const [abandoning, setAbandoning] = useState(false)
   const [canAbandon, setCanAbandon] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
   const busy = useRef(false)
   const [retry, setRetry] = useState(0)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const running = !!pending && job?.state !== 'SUCCEEDED' && job?.state !== 'FAILED' && job?.state !== 'CANCELLED'
+  useEffect(() => {
+    if (!running && !uploading) return
+    setNowMs(Date.now())
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [running, uploading])
 
   function remember(value: PendingGeneration | null) {
     if (value) localStorage.setItem(key, JSON.stringify(value))
@@ -45,7 +54,10 @@ export function useGeneration(userId: string) {
         setJob(current)
         setCanAbandon(false)
         setError('')
-        setStatus(current.state === 'CANCELLED' ? '生成已取消，本次不扣次数。' : current.state === 'FAILED' ? '生成未完成' : current.state === 'SUCCEEDED' ? '图纸已生成' : current.state === 'CANCEL_REQUESTED' ? '正在取消生成…' : STAGES[current.stage] ?? '正在生成图纸…')
+        setStatus(generationProgress({
+          jobState: current.state,
+          stage: current.stage,
+        }).status)
         if (current.state === 'SUCCEEDED') return
         if (current.state === 'FAILED' || current.state === 'CANCELLED') {
           if (current.state === 'FAILED') setError(current.error?.message ?? '生成失败，本次不扣次数。')
@@ -85,8 +97,15 @@ export function useGeneration(userId: string) {
       if (record && record.sourceSha256 !== sourceSha256) throw new Error('请先确认上次生成的结果，再上传另一张图片。')
       if (!record) {
         const project = await createProject(file.name.replace(/\.[^.]+$/, '') || '图片图纸')
-        record = { requestKey: crypto.randomUUID(), sourceSha256,
-          projectId: project.project.project_id, headRevisionId: project.initial_revision.revision_id }
+        record = {
+          requestKey: crypto.randomUUID(),
+          sourceSha256,
+          projectId: project.project.project_id,
+          headRevisionId: project.initial_revision.revision_id,
+          startedAtMs: Date.now(),
+        }
+      } else if (!record.startedAtMs) {
+        record = { ...record, startedAtMs: Date.now() }
       }
       // Persist before submission, so a lost response can be recovered without another charge.
       remember(record)
@@ -150,6 +169,21 @@ export function useGeneration(userId: string) {
   }
 
   function acknowledge() { remember(null); setJob(null); setStatus(''); setError(''); setCanAbandon(false) }
-  return { start, cancel, abandonUpload, canAbandon, abandoning, acknowledge, job, status, error, pending: !!pending, uploading,
-    retry: () => setRetry(value => value + 1) }
+  const elapsedMs = Math.max(0, nowMs - (pending?.startedAtMs ?? nowMs))
+  const progress = useMemo(
+    () => generationProgress({
+      uploading,
+      pending: !!pending,
+      jobState: job?.state,
+      stage: job?.stage,
+      elapsedMs,
+    }),
+    [uploading, pending, job?.state, job?.stage, elapsedMs],
+  )
+  return {
+    start, cancel, abandonUpload, canAbandon, abandoning, acknowledge, job,
+    status: pending || uploading || job ? progress.status || status : status, error, pending: !!pending, uploading,
+    progress, elapsedLabel: formatElapsed(elapsedMs), running: running || uploading,
+    retry: () => setRetry(value => value + 1),
+  }
 }

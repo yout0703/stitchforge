@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0v24" fill="none" stroke="#d2c9bd" stroke-opacity=".45"/></pattern></defs>
   <rect width="1200" height="630" fill="#ece8e1"/><rect width="1200" height="630" fill="url(#grid)"/>
-  <rect x="84" y="72" width="72" height="72" rx="14" fill="#211e1a"/><path d="M102 90l36 36m0-36l-36 36" stroke="#fffaf3" stroke-width="7"/>
+  <image href="/icon-192.png" x="76" y="64" width="88" height="88" preserveAspectRatio="xMidYMid meet"/>
   <text x="84" y="220" fill="#98472f" font-family="Arial,sans-serif" font-size="24" font-weight="700" letter-spacing="4">STITCHFORGE</text>
   <text x="84" y="310" fill="#211e1a" font-family="serif" font-size="68" font-weight="700">把画面变成能绣的图纸</text>
   <text x="84" y="374" fill="#655e55" font-family="Arial,sans-serif" font-size="28">生成 · 编辑 · OXS 导入 · 图纸导出</text>

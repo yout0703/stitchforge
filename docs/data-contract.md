@@ -195,7 +195,7 @@ API 与数据 Schema 类型生成不允许产生另一套哈希实现而无跨�
 | `MATERIAL_SOURCE_EXISTS` | 每个非空 source_ref 在 sources 中存在 | 拒绝；未证明测量则不许 measured |
 | `MATERIAL_COLOR_STATE` | unknown⇔色值为 null；其他状态有色值和来源 | 拒绝不一致 |
 | `RECIPE_STRANDS` | MVP 一个组成，股数 1–6 | 拒绝；混线去 ImportDraft |
-| `PALETTE_BUDGET` | 实际使用配方数≤constraints.color_budget≤64 | 超预算提案不可提交；可通过提高预算重试 |
+| `PALETTE_BUDGET` | 实际使用配方数≤constraints.color_budget≤4096 | 图片自动配色预算仍为 1–64；已有图纸导入与编辑保留完整线色 |
 | `LEGEND_COMPLETE` | 使用配方恰好一个 symbol；所有条目引用存在 | 拒绝缺失／重复映射 |
 | `REGION_BOUNDS` | 区间在对应网格内，排序且无重叠冗余 | 规范化后重检，越界拒绝 |
 | `CAPABILITY_SUPPORTED` | 只含声明且已实现的 full_cross 数据 | 拒绝不支持的核心能力 |

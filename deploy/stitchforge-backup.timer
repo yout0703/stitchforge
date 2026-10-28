@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily StitchForge backup
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Asia/Shanghai
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

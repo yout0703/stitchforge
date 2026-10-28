@@ -53,6 +53,15 @@ def _ink(rgb: tuple[int, int, int]) -> str:
     return "black" if luminance > 0.179 else "white"
 
 
+def _symbol_font(symbol: str, size: int, available_width: int) -> ImageFont.FreeTypeFont:
+    font = ImageFont.load_default(size=size)
+    if font.getlength(symbol) > available_width:
+        font = ImageFont.load_default(
+            size=max(1, int(size * available_width / font.getlength(symbol)))
+        )
+    return font
+
+
 def render_download_chart(document: dict[str, Any], output_path: str | Path) -> Path:
     validate_document(document).raise_for_errors()
     width, height = document["grid"]["width"], document["grid"]["height"]
@@ -63,7 +72,6 @@ def render_download_chart(document: dict[str, Any], output_path: str | Path) -> 
     cell = min(28, max(12, math.floor(math.sqrt(50_000_000 / (width * height)))))
     text_font, unicode_supported = _text_font(18)
     title_font, _ = _text_font(26)
-    symbol_font = ImageFont.load_default(size=max(10, round(cell * 0.66)))
     ruler_font = ImageFont.load_default(size=12)
     materials = {item["id"]: item for item in document["materials"]}
     entries = []
@@ -123,7 +131,7 @@ def render_download_chart(document: dict[str, Any], output_path: str | Path) -> 
             ImageDraw.Draw(tile).text(
                 (cell / 2, cell / 2),
                 symbols[index],
-                font=symbol_font,
+                font=_symbol_font(symbols[index], max(10, round(cell * 0.66)), cell - 4),
                 anchor="mm",
                 fill=_ink(colors[index]),
             )
@@ -169,7 +177,7 @@ def render_download_chart(document: dict[str, Any], output_path: str | Path) -> 
             draw.text(
                 (x + 16, y + 16),
                 symbols[index],
-                font=ImageFont.load_default(size=21),
+                font=_symbol_font(symbols[index], 21, 28),
                 fill=_ink(colors[index]),
                 anchor="mm",
             )

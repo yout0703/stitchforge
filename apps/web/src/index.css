@@ -1,38 +1,38 @@
 :root {
   /* StitchForge Design Tokens - Color Palette */
-  --sf-accent-50: #fff4ee;
-  --sf-accent-100: #fce4d8;
-  --sf-accent-200: #f5c6b2;
-  --sf-accent-300: #e89d7e;
-  --sf-accent-500: #b85f43;
-  --sf-accent-600: #98472f;
-  --sf-accent-700: #753522;
-  --sf-accent-glow: rgba(184, 95, 67, 0.2);
+  --sf-accent-50: #eef3ff;
+  --sf-accent-100: #dce6ff;
+  --sf-accent-200: #b9ccff;
+  --sf-accent-300: #88a7f4;
+  --sf-accent-500: #4167d9;
+  --sf-accent-600: #3154bd;
+  --sf-accent-700: #29479c;
+  --sf-accent-glow: rgba(65, 103, 217, 0.22);
 
-  --sf-ink-950: #211e1a;
-  --sf-ink-900: #2b2722;
-  --sf-ink-800: #3c3730;
-  --sf-ink-700: #4f4941;
-  --sf-ink-600: #655e55;
-  --sf-ink-500: #756d63;
-  --sf-ink-400: #8d8479;
-  --sf-ink-300: #b8afa4;
-  --sf-ink-200: #d9d2c8;
-  --sf-ink-100: #eee9e2;
+  --sf-ink-950: #151b2a;
+  --sf-ink-900: #202738;
+  --sf-ink-800: #30394d;
+  --sf-ink-700: #424c61;
+  --sf-ink-600: #5a6578;
+  --sf-ink-500: #707b8d;
+  --sf-ink-400: #8e98a9;
+  --sf-ink-300: #b4bcc8;
+  --sf-ink-200: #d2d8e1;
+  --sf-ink-100: #e9edf3;
 
   /* Surfaces & Canvas */
-  --sf-bg-canvas: #ece8e1;
-  --sf-bg-canvas-subtle: #f2efe9;
-  --sf-bg-panel: #fffdf9;
-  --sf-bg-panel-subtle: #f8f5ef;
-  --sf-bg-muted: #f1ece5;
-  --sf-bg-elevated: #fffdf9;
-  --sf-bg-glass: rgba(255, 253, 249, 0.9);
+  --sf-bg-canvas: #e8ecf2;
+  --sf-bg-canvas-subtle: #f0f3f7;
+  --sf-bg-panel: #fbfcfe;
+  --sf-bg-panel-subtle: #f5f7fa;
+  --sf-bg-muted: #edf0f5;
+  --sf-bg-elevated: #ffffff;
+  --sf-bg-glass: rgba(251, 252, 254, 0.92);
 
   /* Lines & Borders */
-  --sf-border-subtle: #e4ddd3;
-  --sf-border: #d2c9bd;
-  --sf-border-strong: #a99f92;
+  --sf-border-subtle: #e1e6ed;
+  --sf-border: #cbd2dd;
+  --sf-border-strong: #9ca7b8;
 
   /* Status Colors */
   --sf-success: #426d52;
@@ -49,18 +49,18 @@
   --sf-info-border: #c6d4db;
 
   /* Elevation Shadows */
-  --sf-shadow-xs: 0 1px 2px rgba(64, 47, 36, 0.05);
-  --sf-shadow-sm: 0 2px 5px rgba(64, 47, 36, 0.07);
-  --sf-shadow-md: 0 8px 20px -8px rgba(64, 47, 36, 0.2);
-  --sf-shadow-lg: 0 18px 38px -18px rgba(64, 47, 36, 0.3);
-  --sf-shadow-xl: 0 28px 64px -28px rgba(64, 47, 36, 0.42);
+  --sf-shadow-xs: 0 1px 2px rgba(25, 39, 67, 0.06);
+  --sf-shadow-sm: 0 3px 8px rgba(25, 39, 67, 0.08);
+  --sf-shadow-md: 0 10px 24px -10px rgba(25, 39, 67, 0.22);
+  --sf-shadow-lg: 0 20px 46px -20px rgba(25, 39, 67, 0.3);
+  --sf-shadow-xl: 0 32px 72px -30px rgba(25, 39, 67, 0.42);
 
   /* Radii */
   --sf-radius-xs: 4px;
   --sf-radius-sm: 6px;
-  --sf-radius-md: 9px;
-  --sf-radius-lg: 14px;
-  --sf-radius-xl: 20px;
+  --sf-radius-md: 10px;
+  --sf-radius-lg: 16px;
+  --sf-radius-xl: 22px;
   --sf-radius-full: 9999px;
 
   /* Transitions */
@@ -223,10 +223,10 @@ a:focus-visible {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
+  background: rgba(112, 123, 141, 0.38);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.7);
+  background: rgba(65, 78, 99, 0.68);
 }

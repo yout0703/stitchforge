@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up StitchForge database and immutable artifacts
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/stitchforge/current/deploy/backup.sh
+UMask=0077
+Nice=10

@@ -31,6 +31,7 @@ from .recovery import recover_rendered_stitch_colors
 from .segmentation import remove_connected_border_background
 from .stats import calculate_statistics
 from .validation import validate_document
+from .xsd import export_xsd, import_xsd
 
 
 def _print(value: Any) -> None:
@@ -116,6 +117,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="确认 OXS 无法保存顶层针方向、来源和区域策略",
     )
 
+    import_xsd_parser = subparsers.add_parser(
+        "import-xsd", help="导入 Pattern Maker v4 XSD 全针图纸"
+    )
+    import_xsd_parser.add_argument("input", type=Path)
+    import_xsd_parser.add_argument("--output", type=Path, required=True)
+    import_xsd_parser.add_argument("--report", type=Path)
+    import_xsd_parser.add_argument(
+        "--legacy-encoding", choices=["cp1251", "gb18030", "cp1252"], default="cp1251"
+    )
+    export_xsd_parser = subparsers.add_parser(
+        "export-xsd", help="导出 Pattern Maker v4 XSD 全针图纸"
+    )
+    export_xsd_parser.add_argument("input", type=Path)
+    export_xsd_parser.add_argument("--output", type=Path, required=True)
+    export_xsd_parser.add_argument("--report", type=Path)
+    export_xsd_parser.add_argument("--confirm-loss", action="store_true")
+
     normalize_parser = subparsers.add_parser("normalize-image", help="规范化 JPG/PNG 工作图")
     normalize_parser.add_argument("input", type=Path)
     normalize_parser.add_argument("--output", type=Path, required=True)
@@ -174,9 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         help="覆盖材料目录默认值；1–6 股。未提供时使用目录建议值",
     )
-    pattern_parser.add_argument(
-        "--purpose", required=True, choices=["user_design", "test_fixture"]
-    )
+    pattern_parser.add_argument("--purpose", required=True, choices=["user_design", "test_fixture"])
     pattern_parser.add_argument("--output", type=Path, required=True)
     pattern_parser.add_argument("--report", type=Path)
 
@@ -189,9 +205,7 @@ def _build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--max-height-mm", type=float, required=True)
     plan_parser.add_argument("--fabric-counts", type=_integer_list, default=(14, 16, 18))
 
-    optimize_parser = subparsers.add_parser(
-        "optimize-pattern", help="在锁定约束下简化小连通域"
-    )
+    optimize_parser = subparsers.add_parser("optimize-pattern", help="在锁定约束下简化小连通域")
     optimize_parser.add_argument("input", type=Path, help="PatternDocument JSON")
     optimize_parser.add_argument("--sample", type=Path, required=True)
     optimize_parser.add_argument("--edge-lambda", type=float, default=0.75)
@@ -268,9 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             sample = load_grid_sample(args.input)
             catalog = load_catalog(args.catalog)
             palette_selector = (
-                select_clustered_palette
-                if args.palette_strategy == "clustered"
-                else select_palette
+                select_clustered_palette if args.palette_strategy == "clustered" else select_palette
             )
             palette_options: dict[str, Any] = {
                 "color_budget": args.color_budget,
@@ -316,10 +328,17 @@ def main(argv: list[str] | None = None) -> int:
                 write_json(args.report, result.report.as_dict())
             _print(result.report.as_dict())
             return 0
-        if args.command == "import-oxs":
-            result = import_oxs(
-                args.input,
-                coordinate_profile=args.coordinate_profile,
+        if args.command in {"import-oxs", "import-xsd"}:
+            result = (
+                import_oxs(
+                    args.input,
+                    coordinate_profile=args.coordinate_profile,
+                )
+                if args.command == "import-oxs"
+                else import_xsd(
+                    args.input,
+                    legacy_encoding=args.legacy_encoding,
+                )
             )
             report = result.report.as_dict()
             if args.report:
@@ -362,6 +381,13 @@ def main(argv: list[str] | None = None) -> int:
                 coordinate_profile=args.coordinate_profile,
                 confirm_loss=args.confirm_loss,
             )
+            report_dict = report.as_dict()
+            if args.report:
+                write_json(args.report, report_dict)
+            _print(report_dict)
+            return 0 if not report.blocked else 2
+        if args.command == "export-xsd":
+            report = export_xsd(document, args.output, confirm_loss=args.confirm_loss)
             report_dict = report.as_dict()
             if args.report:
                 write_json(args.report, report_dict)

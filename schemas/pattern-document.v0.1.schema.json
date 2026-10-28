@@ -500,7 +500,7 @@
         "color_budget": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 64
+          "maximum": 4096
         },
         "metric_profile": {
           "type": "string",

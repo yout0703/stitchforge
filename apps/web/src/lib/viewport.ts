@@ -50,6 +50,36 @@ export function cellSize(viewport: Viewport): number {
   return BASE_CELL_SIZE * viewport.zoom
 }
 
+export function coordinateInterval(renderedCellSize: number, minimumSpacing = 56): number | null {
+  if (renderedCellSize < 4.5) return null
+  const minimumCells = Math.max(1, Math.ceil(minimumSpacing / renderedCellSize))
+  const magnitude = 10 ** Math.floor(Math.log10(minimumCells))
+  const normalized = minimumCells / magnitude
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  return multiplier * magnitude
+}
+
+export function visibleCoordinateValues(
+  startIndex: number,
+  endIndex: number,
+  total: number,
+  interval: number,
+): number[] {
+  const startCoordinate = startIndex + 1
+  const endCoordinate = Math.min(total, endIndex)
+  const values: number[] = []
+  if (startIndex === 0) values.push(1)
+  const firstRegular = Math.ceil(startCoordinate / interval) * interval
+  for (let value = firstRegular; value <= endCoordinate; value += interval) {
+    if (value !== 1) values.push(value)
+  }
+  const last = values.at(-1)
+  if (endIndex === total && total !== last && (last === undefined || total - last >= interval / 2)) {
+    values.push(total)
+  }
+  return values
+}
+
 export function fitViewport(
   canvasWidth: number,
   canvasHeight: number,

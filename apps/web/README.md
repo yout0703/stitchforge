@@ -40,7 +40,7 @@ uv run --with playwright python tools/check_review_recovery_fixes.py
 
 图片导入无需填写参数。通过项目根目录 `.env` 中的 `STITCHFORGE_AI_PROVIDER=deepseek` 和 `DEEPSEEK_API_KEY` 接入 DeepSeek-V4.1-Flash（API 模型名 `deepseek-flash`），验证结构化建议后生成图纸；不可用、超时或建议无效时自动使用本地方案。配置与切换说明见 [AI 图片分析](../../docs/ai-analysis.md)。CT/股数为制作建议，既有针格的精确恢复仍需专门的网格检测。分析依据随版本保存，右侧可查看。仅在使用 `STITCHFORGE_AI_PROVIDER=codex` 时调用本机 Codex CLI；设置 `STITCHFORGE_CODEX_ENABLED=0` 可关闭 CLI，`STITCHFORGE_CODEX_TIMEOUT` 控制超时秒数（默认 60），`STITCHFORGE_CODEX_MODEL` 可指定模型。
 
-“导入 OXS”读取全针图纸的针格、线色、CT 和股数，新建独立项目并进入查看模式；不支持的针法会给出报告并阻止导入。实时坐标和针格线色固定在右侧顶部，滚动色表不会将其卷走。
+“导入 OXS / XSD”读取全针图纸的针格、线色、CT 和股数，新建独立项目并进入查看模式；不支持的针法会给出报告并阻止导入。XSD 支持 Pattern Maker v4，可切换旧版文字编码；支持下载 XSD。兼容边界见 [XSD 格式说明](../../docs/xsd-format.md)。实时坐标和针格线色固定在右侧顶部，滚动色表不会将其卷走。
 
 额外导入回归（临时启动 API，使用临时数据库，不修改当前项目）：
 

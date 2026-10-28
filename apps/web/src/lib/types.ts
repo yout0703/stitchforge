@@ -121,5 +121,5 @@ export interface LibraryProject extends ProjectRecord {
   height: number | null
   fabric_count: number | null
   color_count: number | null
-  source_kind: 'image' | 'oxs' | 'blank'
+  source_kind: 'image' | 'oxs' | 'xsd' | 'blank'
 }

@@ -7,6 +7,7 @@ import { normalizeSelection } from '../lib/selection'
 import type { CellSelection, PatternDocument, Tool } from '../lib/types'
 import {
   cellSize,
+  coordinateInterval,
   pinchViewport,
   type TouchPoint,
   fitViewport,
@@ -15,6 +16,7 @@ import {
   shouldActivateTemporaryPan,
   shouldStartPan,
   visibleCellRange,
+  visibleCoordinateValues,
   zoomAt,
   type CellPosition,
   type Viewport,
@@ -23,6 +25,8 @@ import {
 interface PatternCanvasProps {
   document: PatternDocument
   readOnly: boolean
+  fitRequest: number
+  focusTarget: { col: number; row: number; token: number } | null
   highlightedRecipe: number | null
   showSymbols: boolean
   showGrid: boolean
@@ -57,6 +61,8 @@ function pointerPosition(event: PointerEvent<HTMLCanvasElement>) {
 export function PatternCanvas({
   document,
   readOnly,
+  fitRequest,
+  focusTarget,
   highlightedRecipe,
   showSymbols,
   showGrid,
@@ -87,6 +93,7 @@ export function PatternCanvas({
   const [panning, setPanning] = useState(false)
   const [canvasFocused, setCanvasFocused] = useState(false)
   const [keyboardCell, setKeyboardCell] = useState({ col: 0, row: 0 })
+  const handledFitRequest = useRef(fitRequest)
   const symbols = useMemo(() => recipeSymbols({ recipes: document.recipes, legend: document.legend }), [document.recipes, document.legend])
   const colors = useMemo(() => {
     const materials = new Map(document.materials.map((item) => [item.id, item]))
@@ -173,7 +180,11 @@ export function PatternCanvas({
         if (canvas.width !== pixelWidth) canvas.width = pixelWidth
         if (canvas.height !== pixelHeight) canvas.height = pixelHeight
         const previous = previousSize
-        setViewport((current) => previous
+        const majorResize = previous && (
+          Math.abs(width - previous.width) / previous.width > 0.32 ||
+          Math.abs(height - previous.height) / previous.height > 0.32
+        )
+        setViewport((current) => previous && !majorResize
           ? {
               ...current,
               offsetX: current.offsetX + (width - previous.width) / 2,
@@ -194,6 +205,12 @@ export function PatternCanvas({
       observer.disconnect()
     }
   }, [document.grid.height, document.grid.width])
+
+  useEffect(() => {
+    if (handledFitRequest.current === fitRequest || surface.width <= 0 || surface.height <= 0) return
+    handledFitRequest.current = fitRequest
+    setViewport(fitViewport(surface.width, surface.height, document.grid.width, document.grid.height))
+  }, [document.grid.height, document.grid.width, fitRequest, surface.height, surface.width])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -222,12 +239,14 @@ export function PatternCanvas({
 
     for (let row = range.startRow; row < range.endRow; row += 1) {
       for (let col = range.startCol; col < range.endCol; col += 1) {
-        const recipe = document.full_stitches.cells[row * document.grid.width + col]
+        const index = row * document.grid.width + col
+        const recipe = document.full_stitches.cells[index]
         if (recipe === 0) continue
         const x = col * size
         const y = row * size
         const inset = size >= 4 ? 1 : 0
-        context.globalAlpha = highlightedRecipe !== null && recipe !== highlightedRecipe ? 0.15 : 1
+        const highlightedAlpha = highlightedRecipe !== null && recipe !== highlightedRecipe ? 0.15 : 1
+        context.globalAlpha = highlightedAlpha
         context.fillStyle = colors.get(recipe) ?? '#9BA2AE'
         context.fillRect(
           x + inset,
@@ -243,7 +262,7 @@ export function PatternCanvas({
           context.font = `bold ${Math.max(8, size * 0.6)}px monospace`
           context.textAlign = 'center'
           context.textBaseline = 'middle'
-          context.fillText(symbols.get(recipe) ?? '?', x + size / 2, y + size / 2)
+          context.fillText(symbols.get(recipe) ?? '?', x + size / 2, y + size / 2, size - 3)
         } else if (size >= 9) {
           context.strokeStyle = recipe === 1 ? '#FFFFFF' : 'rgba(20, 27, 38, .5)'
           context.lineWidth = Math.max(1, size * 0.08)
@@ -254,6 +273,7 @@ export function PatternCanvas({
           context.lineTo(x + size * 0.22, y + size * 0.78)
           context.stroke()
         }
+        context.globalAlpha = 1
       }
     }
 
@@ -288,6 +308,15 @@ export function PatternCanvas({
       context.strokeRect(x + 1, y + 1, width - 2, height - 2)
       context.setLineDash([])
     }
+    if (focusTarget) {
+      const x = focusTarget.col * size
+      const y = focusTarget.row * size
+      context.fillStyle = 'rgba(35, 92, 207, .18)'
+      context.fillRect(x, y, size, size)
+      context.strokeStyle = '#235CCF'
+      context.lineWidth = Math.max(2, Math.min(4, size * 0.18))
+      context.strokeRect(x + 1, y + 1, Math.max(1, size - 2), Math.max(1, size - 2))
+    }
     if (canvasFocused) {
       const x = keyboardCell.col * size
       const y = keyboardCell.row * size
@@ -296,7 +325,54 @@ export function PatternCanvas({
       context.strokeRect(x + 1, y + 1, Math.max(1, size - 2), Math.max(1, size - 2))
     }
     context.restore()
-  }, [canvasFocused, colors, document, keyboardCell, selection, surface, viewport, highlightedRecipe, showSymbols, showGrid, symbols])
+
+    const interval = readOnly ? coordinateInterval(size) : null
+    if (interval !== null) {
+      const patternRight = viewport.offsetX + document.grid.width * size
+      const patternBottom = viewport.offsetY + document.grid.height * size
+      const topY = Math.max(10, Math.min(surface.height - 10, viewport.offsetY - 14))
+      const bottomY = Math.max(10, Math.min(surface.height - 10, patternBottom + 14))
+      const leftX = Math.max(24, Math.min(surface.width - 24, viewport.offsetX - 26))
+      const rightX = Math.max(24, Math.min(surface.width - 24, patternRight + 26))
+      const columnValues = visibleCoordinateValues(range.startCol, range.endCol, document.grid.width, interval)
+      const rowValues = visibleCoordinateValues(range.startRow, range.endRow, document.grid.height, interval)
+
+      context.save()
+      context.font = '600 11px Inter, ui-sans-serif, system-ui, -apple-system, sans-serif'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      const rulerContext = context
+
+      function drawCoordinateLabel(x: number, y: number, label: string) {
+        const metrics = rulerContext.measureText(label)
+        const width = Math.ceil(metrics.width) + 8
+        const height = 17
+        const safeX = Math.max(width / 2 + 2, Math.min(surface.width - width / 2 - 2, x))
+        const safeY = Math.max(height / 2 + 2, Math.min(surface.height - height / 2 - 2, y))
+        rulerContext.fillStyle = 'rgba(248, 250, 252, .9)'
+        rulerContext.fillRect(safeX - width / 2, safeY - height / 2, width, height)
+        rulerContext.strokeStyle = 'rgba(100, 116, 139, .28)'
+        rulerContext.lineWidth = 1
+        rulerContext.strokeRect(safeX - width / 2 + 0.5, safeY - height / 2 + 0.5, width - 1, height - 1)
+        rulerContext.fillStyle = '#334155'
+        rulerContext.fillText(label, safeX, safeY + 0.5)
+      }
+
+      for (const value of columnValues) {
+        const x = viewport.offsetX + (value - 0.5) * size
+        if (x < 0 || x > surface.width) continue
+        drawCoordinateLabel(x, topY, `列 ${value}`)
+        drawCoordinateLabel(x, bottomY, `列 ${value}`)
+      }
+      for (const value of rowValues) {
+        const y = viewport.offsetY + (value - 0.5) * size
+        if (y < 0 || y > surface.height) continue
+        drawCoordinateLabel(leftX, y, `行 ${value}`)
+        drawCoordinateLabel(rightX, y, `行 ${value}`)
+      }
+      context.restore()
+    }
+  }, [canvasFocused, colors, document, focusTarget, keyboardCell, readOnly, selection, surface, viewport, highlightedRecipe, showSymbols, showGrid, symbols])
 
   function cellAt(event: PointerEvent<HTMLCanvasElement>) {
     const position = pointerPosition(event)
@@ -504,6 +580,19 @@ export function PatternCanvas({
     })
   }
 
+  useEffect(() => {
+    if (!focusTarget || surface.width <= 0 || surface.height <= 0) return
+    setKeyboardCell({ col: focusTarget.col, row: focusTarget.row })
+    setViewport((current) => {
+      const size = cellSize(current)
+      return {
+        ...current,
+        offsetX: surface.width / 2 - (focusTarget.col + 0.5) * size,
+        offsetY: surface.height / 2 - (focusTarget.row + 0.5) * size,
+      }
+    })
+  }, [focusTarget, surface.height, surface.width])
+
   function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLCanvasElement>) {
     const movement = {
       ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
@@ -544,7 +633,7 @@ export function PatternCanvas({
       <canvas
         ref={canvasRef}
         className={`pattern-canvas tool-${readOnly ? 'pan' : tool}${temporaryPan ? ' temporary-pan' : ''}${panning ? ' is-panning' : ''}`}
-        aria-label={readOnly ? "十字绣图纸，拖动平移，双指缩放，点击查看线色" : "可编辑十字绣针格"}
+        aria-label={readOnly ? "十字绣图纸，四周显示可读坐标，拖动平移，双指缩放，点击查看线色" : "可编辑十字绣针格"}
         aria-describedby="pattern-canvas-help"
         tabIndex={0}
         onFocus={() => { setCanvasFocused(true); onHover(keyboardCell) }}

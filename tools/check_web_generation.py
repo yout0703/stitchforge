@@ -77,9 +77,12 @@ with sync_playwright() as runner:
         stage="completed",
         result={"revision": {"revision_id": "r1", "document": pattern}},
     )
-    expect(page.get_by_role("button", name="打开生成图纸", exact=True)).to_be_visible(timeout=10000)
-    page.get_by_role("button", name="打开生成图纸", exact=True).click()
-    page.get_by_text("4 × 3 格", exact=True).wait_for()
+    open_result = page.get_by_role("button", name="打开生成图纸", exact=True)
+    grid = page.get_by_text("4 × 3 格", exact=True)
+    open_result.or_(grid).wait_for(timeout=10000)
+    if open_result.is_visible():
+        open_result.click()
+    grid.wait_for()
     expect(page.get_by_text("生成时合并了 1 种近似线色，调整 4 针。", exact=True)).to_be_visible()
     page.reload()
     expect(page.get_by_text("生成时合并了 1 种近似线色，调整 4 针。", exact=True)).to_be_visible()

@@ -7,10 +7,18 @@ from urllib.parse import unquote
 import pytest
 from conftest import AccountClient
 from PIL import Image, ImageChops, ImageFont
-from stitchforge.chart_image import MAX_CHART_PIXELS, render_download_chart
+from stitchforge.chart_image import MAX_CHART_PIXELS, _symbol_font, render_download_chart
 from stitchforge.oxs import SUPPORTED_COORDINATE_PROFILE, import_oxs
+from stitchforge.xsd import import_xsd
 from stitchforge_api import create_app
 from stitchforge_api.app import CHART_EXPORT_SLOT
+
+
+@pytest.mark.parametrize("symbol", ["AA", "WW", "!?", "AM"])
+def test_extended_symbol_labels_fit_chart_cells(symbol):
+    for cell in (12, 28):
+        font = _symbol_font(symbol, max(10, round(cell * 0.66)), cell - 4)
+        assert font.getlength(symbol) <= cell - 4
 
 
 def test_complete_png_has_all_cells_symbols_and_legend(tmp_path, minimal_document, monkeypatch):
@@ -76,7 +84,7 @@ def test_png_largest_supported_grid_fits_bound(tmp_path, minimal_document, monke
         image.verify()
 
 
-@pytest.mark.parametrize("format", ["oxs", "png"])
+@pytest.mark.parametrize("format", ["oxs", "xsd", "png"])
 def test_download_is_private_free_and_revision_specific(tmp_path, minimal_document, format):
     with AccountClient(create_app(tmp_path / "data")) as client:
         created = client.post("/api/v1/projects", json={"name": "Download"}).json()
@@ -98,10 +106,14 @@ def test_download_is_private_free_and_revision_specific(tmp_path, minimal_docume
         assert f"Chart _ test.{format}" in unquote(response.headers["content-disposition"])
         assert response.headers["content-disposition"].startswith("attachment;")
         assert client.get("/api/v1/billing").json()["credits"] == balance
-        if format == "oxs":
-            path = tmp_path / "download.oxs"
+        if format in {"oxs", "xsd"}:
+            path = tmp_path / f"download.{format}"
             path.write_bytes(response.content)
-            loaded = import_oxs(path, coordinate_profile=SUPPORTED_COORDINATE_PROFILE).document
+            loaded = (
+                import_oxs(path, coordinate_profile=SUPPORTED_COORDINATE_PROFILE).document
+                if format == "oxs"
+                else import_xsd(path).document
+            )
             assert loaded["full_stitches"]["cells"] == document["full_stitches"]["cells"]
             assert loaded["grid"] == document["grid"]
             assert [m["code"] for m in loaded["materials"]] == [

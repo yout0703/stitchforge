@@ -50,6 +50,17 @@ def _codes(report) -> set[str]:
     return {issue.code for issue in report.issues}
 
 
+def test_oxs_preserves_imported_palette_above_generation_budget(tmp_path, many_color_document):
+    path = tmp_path / "77-colours.oxs"
+    assert not export_oxs(
+        many_color_document, path, coordinate_profile=PROFILE, confirm_loss=True
+    ).blocked
+    result = import_oxs(path, coordinate_profile=PROFILE)
+    assert result.document is not None, result.report.as_dict()
+    assert result.document["constraints"]["color_budget"] == 77
+    assert result.document["full_stitches"]["cells"] == list(range(1, 78))
+
+
 def test_import_oxs_maps_coordinates_palette_and_provenance(tmp_path: Path) -> None:
     source = _write(tmp_path / "asymmetric.oxs", _oxs())
 

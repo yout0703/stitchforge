@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { XIcon } from '@phosphor-icons/react'
 import { accountRequest, type Billing, type Checkout, type CreditOrder, type CreditPack, type User } from '../lib/account'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency }).format(amount / 100)
@@ -94,13 +95,13 @@ export function AccountPanel({ user, onClose, onLogout, onRefresh }: {
 
   return <dialog ref={dialog} className="import-dialog account-panel" aria-labelledby="billing-title"
     onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
-    <div className="import-heading"><div><h2 id="billing-title">我的账号与次数</h2><p>{user.email}</p></div><button autoFocus disabled={busy} aria-label="关闭账号面板" onClick={onClose}>×</button></div>
+    <div className="import-heading"><div><h2 id="billing-title">我的账号与次数</h2><p>{user.email}</p></div><button autoFocus disabled={busy} aria-label="关闭账号面板" onClick={onClose}><XIcon size={20} aria-hidden="true" /></button></div>
     <div className="account-panel-body">
     <section className="account-balance-card" aria-label="可用生成次数">
       <span className="account-eyebrow">可用生成次数</span>
-      <div className="credit-balance"><strong>{billing?.credits.toLocaleString('zh-CN') ?? '—'}</strong><span>次</span></div>
+      <div className="credit-balance"><strong>{billing?.credits.toLocaleString('zh-CN') ?? '-'}</strong><span>次</span></div>
       <p>图片生成成功后扣 1 次，失败不扣次数。</p>
-      <div className="account-free-note">OXS 导入 · 看图 · 编辑 · 下载，均免费</div>
+      <div className="account-free-note">OXS / XSD 导入、看图、编辑和下载均免费</div>
     </section>
     {error && <p className="api-error" role="alert">{error}</p>}
     {notice && <p role="status" className="billing-notice">{notice}</p>}

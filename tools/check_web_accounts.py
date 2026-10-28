@@ -24,6 +24,23 @@ from stitchforge_storage.accounts import AccountStore
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "output" / "account-review"
 OUTPUT.mkdir(parents=True, exist_ok=True)
+
+
+def open_import(page, kind):
+    if page.viewport_size["width"] < 768:
+        page.get_by_role("button", name="新建", exact=True).click()
+        label = "图片生成" if kind == "image" else "导入 OXS / XSD"
+        page.locator(".mobile-create-options button").filter(has_text=label).click()
+    else:
+        label = "图片转图纸" if kind == "image" else "导入 OXS / XSD"
+        page.locator(".sidebar-task-button").filter(has_text=label).click()
+
+
+def open_account(page):
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.locator(".sidebar-account").click()
+
+
 with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
     work = Path(name)
     with socket.socket() as listener:
@@ -91,20 +108,19 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
             page.get_by_role("button", name="还没有账号？免费注册").click()
             page.get_by_label("邮箱", exact=True).fill("alice@example.com")
             page.get_by_label("密码", exact=True).fill("correct-password-123")
+            page.get_by_role("checkbox").check()
             page.get_by_role("button", name="注册并开始", exact=True).click()
             expect(page.get_by_role("heading", name="我的图纸", exact=True)).to_be_visible()
-            page.get_by_role("button", name="导入图片", exact=True).click()
+            open_import(page, "image")
             expect(page.get_by_role("button", name="生成图纸 · 1 次")).to_be_disabled()
             page.get_by_role("button", name="关闭", exact=True).click()
-            page.get_by_role("button", name="OXS 免费导入", exact=True).click()
+            open_import(page, "oxs")
             page.get_by_role("dialog").locator("input[type=file]").set_input_files(
                 ROOT / "examples/minimal-pattern.oxs"
             )
             page.get_by_role("button", name="免费导入图纸", exact=True).click()
             expect(page.get_by_role("dialog")).not_to_be_visible()
-            expect(page.get_by_role("button", name="查看模式")).to_have_attribute(
-                "aria-pressed", "true"
-            )
+            expect(page.get_by_text("看图模式", exact=True)).to_be_visible()
             canvas = page.locator("canvas")
             expect(canvas).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -125,19 +141,18 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
             cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
             page.wait_for_timeout(100)
             assert page.locator(".canvas-viewport").screenshot() != before
-            expect(page.get_by_role("button", name="查看模式")).to_have_attribute(
-                "aria-pressed", "true"
-            )
+            expect(page.get_by_text("看图模式", exact=True)).to_be_visible()
             print("PASS: native two-finger pinch changes the chart without editing")
             page.reload()
             expect(canvas).to_be_visible()
-            page.get_by_role("button", name="0 次 / 账号").click()
+            open_account(page)
             expect(page.get_by_text("暂无使用记录", exact=True)).to_be_visible()
             page.get_by_role("button", name="退出登录", exact=True).click()
             expect(page.get_by_role("heading", name="登录你的工作台")).to_be_visible()
             page.get_by_role("button", name="还没有账号？免费注册").click()
             page.get_by_label("邮箱", exact=True).fill("bob@example.com")
             page.get_by_label("密码", exact=True).fill("correct-password-123")
+            page.get_by_role("checkbox").check()
             page.get_by_role("button", name="注册并开始", exact=True).click()
             expect(page.get_by_role("heading", name="还没有图纸", exact=True)).to_be_visible()
             print("PASS: logout clears the workbench; another account has an empty library")
@@ -153,11 +168,11 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
             )
             accounts.settle_order(order["order_id"], "test-payment", 100, "CNY")
             page.reload()
-            page.get_by_role("button", name="导入图片", exact=True).click()
+            open_import(page, "image")
             page.get_by_role("dialog").locator("input[type=file]").set_input_files(source)
             page.get_by_role("button", name="生成图纸 · 1 次").click()
             expect(page.get_by_role("dialog")).not_to_be_visible(timeout=30000)
-            expect(page.get_by_role("button", name="1 次 / 账号", exact=True)).to_be_visible()
+            expect(page.locator(".sidebar-account")).to_contain_text("剩余 1 次")
             page.set_viewport_size({"width": 1440, "height": 900})
             page.screenshot(path=str(OUTPUT / "desktop-viewer.png"), full_page=True)
             # Export the actual generated document, then verify free repeat downloads on mobile.
@@ -181,15 +196,15 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
             assert loaded.document is not None
             assert any(loaded.document["full_stitches"]["cells"])
             page.get_by_role("button", name="关闭下载", exact=True).click()
-            expect(page.get_by_role("button", name="1 次 / 账号", exact=True)).to_be_visible()
+            expect(page.locator(".sidebar-account")).to_contain_text("剩余 1 次")
             print("PASS: generated PNG and OXS download; mobile save links; no extra credit charge")
             # Confirm export saves and includes an unsaved edit.
             page.set_viewport_size({"width": 1440, "height": 900})
-            page.get_by_role("button", name="编辑模式", exact=True).click()
+            page.get_by_role("button", name="编辑图纸", exact=True).click()
             page.get_by_role("button", name="适应窗口", exact=True).click()
             page.get_by_role("button", name="橡皮擦 E", exact=True).click()
             page.locator("canvas").click()
-            expect(page.get_by_text("有未保存修改", exact=True)).to_be_visible()
+            expect(page.get_by_text("编辑中 · 有未保存修改", exact=True)).to_be_visible()
             page.get_by_role("button", name="下载图纸", exact=True).click()
             expect(page.get_by_text("下载前会先保存当前修改。", exact=True)).to_be_visible()
 
@@ -216,9 +231,9 @@ with tempfile.TemporaryDirectory(prefix="stitchforge-accounts-e2e-") as name:
                 != loaded.document["full_stitches"]["cells"]
             )
             page.get_by_role("button", name="关闭下载", exact=True).click()
-            expect(page.get_by_text("已保存到账号", exact=True)).to_be_visible()
+            expect(page.get_by_text("编辑中 · 已保存到账号", exact=True)).to_be_visible()
             print("PASS: failed save blocks download; retry saves and exports the edited version")
-            page.get_by_role("button", name="1 次 / 账号").click()
+            open_account(page)
             expect(page.get_by_text("-1", exact=True)).to_be_visible()
             page.set_viewport_size({"width": 390, "height": 844})
             page.screenshot(path=str(OUTPUT / "mobile-credits.png"), full_page=True)

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import App from '../App'
 import { accountRequest, apiFetch, type User } from '../lib/account'
+import stitchStudioHero from '../assets/stitch-studio-hero.jpg'
+import { BrandMark } from './BrandMark'
 
 export function AccountGate() {
   const authEpoch = useRef(0)
@@ -49,15 +51,18 @@ export function AccountGate() {
     await accountRequest('/auth/logout', {}); setUser(null); setError('')
   }} />
   return <><a className="skip-link" href="#main-content">跳到登录表单</a><main id="main-content" className="account-page">
-    <section className="account-intro"><div className="account-brand"><span className="brand-mark" aria-hidden="true">SF</span><p>StitchForge <span>十字绣工作台</span></p></div>
+    <section className="account-intro"><div className="account-brand"><BrandMark className="brand-mark" /><p>StitchForge <span>十字绣工作台</span></p></div>
       <p className="account-eyebrow">从像素到针脚，尺寸与线色都有据可查</p>
       <h1>把喜欢的画面，<br />变成能绣的图纸。</h1>
-      <p className="account-copy">上传图片自动打版，或免费导入 OXS。图纸、原图与版本记录跟随账号保存，换一台设备也能继续。</p>
-      <div className="account-proof" aria-hidden="true">
-        <div className="proof-pattern"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-        <div><span>当前图纸</span><strong>山茶与蓝雀</strong><small>86 × 104 格 · 24 色 · 14 CT</small></div>
-      </div>
-      <div className="account-benefits"><span>OXS 免费导入</span><span>查看与编辑不扣次数</span><span>图片生成按次计费</span></div>
+      <p className="account-copy">上传图片自动打版，或免费导入 OXS / XSD。图纸、原图与版本记录跟随账号保存，换一台设备也能继续。</p>
+      <figure className="account-visual">
+        <img src={stitchStudioHero} alt="蓝色小鸟与花朵十字绣作品、绣线和剪刀" fetchPriority="high" />
+        <figcaption>
+          <strong>从原图到可编辑针格</strong>
+          <span>规划尺寸、匹配线色，再导出清晰图纸。</span>
+        </figcaption>
+      </figure>
+      <div className="account-benefits"><span>自动打版</span><span>OXS / XSD 导入</span><span>在线编辑与导出</span></div>
     </section>
     <section className="account-card" aria-labelledby="account-title">
       <h2 id="account-title">{register ? '创建你的账号' : '登录你的工作台'}</h2>
@@ -70,7 +75,7 @@ export function AccountGate() {
         <button className="primary-button" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '注册并开始' : '登录'}</button>
       </form>
       <button className="account-switch" disabled={busy} onClick={() => { setRegister(!register); setError('') }}>{register ? '已有账号？去登录' : '还没有账号？免费注册'}</button>
-      <small>注册后即可免费导入与查看 OXS；生成图片图纸需先获取次数。</small>
+      <small>注册后即可免费导入与查看 OXS / XSD；生成图片图纸需先获取次数。</small>
       <footer className="account-legal"><span>© 2026 StitchForge</span><a href="/privacy.html">隐私政策</a><a href="/terms.html">服务条款</a></footer>
     </section>
   </main></>

@@ -15,6 +15,42 @@ def minimal_document() -> dict[str, Any]:
         return json.load(stream)
 
 
+@pytest.fixture
+def many_color_document(minimal_document) -> dict[str, Any]:
+    """77 distinct test threads, all used, without bundling a user's design."""
+    document = minimal_document
+    document["metadata"]["title"] = "77 colour regression"
+    document["grid"].update(width=11, height=7)
+    document["regions"] = []
+    document["materials"] = [
+        {
+            "id": f"m_{i}",
+            "brand": "TEST",
+            "series": "Synthetic",
+            "code": f"T{i:03d}",
+            "name": f"Thread {i}",
+            "color": {
+                "display_srgb": f"#{i * 2000:06X}",
+                "status": "synthetic",
+                "source_ref": "src_fixture",
+            },
+        }
+        for i in range(1, 78)
+    ]
+    document["recipes"] = [
+        {
+            "id": f"r_{i}",
+            "index": i,
+            "components": [{"material_id": f"m_{i}", "strands": 2}],
+        }
+        for i in range(1, 78)
+    ]
+    document["legend"] = [{"recipe_id": f"r_{i}", "symbol_id": f"s{i:03d}"} for i in range(1, 78)]
+    document["full_stitches"]["cells"] = list(range(1, 78))
+    document["constraints"]["color_budget"] = 77
+    return document
+
+
 class AccountClient:
     """Existing API contracts exercised inside a real authenticated account."""
 

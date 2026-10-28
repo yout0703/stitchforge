@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   BASE_CELL_SIZE,
+  coordinateInterval,
   fitViewport,
   lineCellIndices,
   screenToCell,
   shouldActivateTemporaryPan,
   shouldStartPan,
   visibleCellRange,
+  visibleCoordinateValues,
   zoomAt,
   type CellPosition,
 } from './viewport'
@@ -62,6 +64,22 @@ describe('viewport', () => {
       300,
     )
     expect(range).toEqual({ startCol: 100, endCol: 146, startRow: 150, endRow: 182 })
+  })
+})
+
+describe('coordinate rulers', () => {
+  it('hides labels when cells are too small and adapts density when readable', () => {
+    expect(coordinateInterval(4)).toBeNull()
+    expect(coordinateInterval(7)).toBe(10)
+    expect(coordinateInterval(12)).toBe(5)
+    expect(coordinateInterval(56)).toBe(1)
+  })
+
+  it('returns one-based labels for the visible range without crowding the last edge', () => {
+    expect(visibleCoordinateValues(0, 42, 100, 10)).toEqual([1, 10, 20, 30, 40])
+    expect(visibleCoordinateValues(20, 65, 100, 10)).toEqual([30, 40, 50, 60])
+    expect(visibleCoordinateValues(0, 100, 100, 20)).toEqual([1, 20, 40, 60, 80, 100])
+    expect(visibleCoordinateValues(0, 154, 154, 10)).toEqual([1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150])
   })
 })
 

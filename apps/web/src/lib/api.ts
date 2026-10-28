@@ -22,7 +22,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function downloadChart(projectId: string, revisionId: string, format: 'oxs' | 'png'): Promise<Blob> {
+export async function downloadChart(projectId: string, revisionId: string, format: 'oxs' | 'xsd' | 'png'): Promise<Blob> {
   const response = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/revisions/${encodeURIComponent(revisionId)}/download/${format}`)
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as { code?: string; message?: string }
@@ -172,6 +172,19 @@ export async function importOxsProject(file: File): Promise<ProjectCreationRespo
   })
   const body = await response.json()
   if (!response.ok) throw new ApiError(body.code ?? 'OXS_IMPORT_ERROR', body.message ?? 'OXS 导入失败', body.request_id)
+  return body
+}
+
+export async function importPatternProject(file: File, legacyEncoding = 'cp1251'): Promise<ProjectCreationResponse & {
+  report: { issues: { severity: string; message: string }[] }
+}> {
+  if (/\.oxs$/i.test(file.name)) return importOxsProject(file)
+  if (!/\.xsd$/i.test(file.name)) throw new Error('请选择 OXS 或 XSD 图纸文件')
+  const response = await apiFetch(`/api/v1/projects/import-xsd?legacy_encoding=${encodeURIComponent(legacyEncoding)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+  })
+  const body = await response.json()
+  if (!response.ok) throw new ApiError(body.code ?? 'XSD_IMPORT_ERROR', body.message ?? 'XSD 导入失败', body.request_id)
   return body
 }
 

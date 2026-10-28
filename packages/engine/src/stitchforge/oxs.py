@@ -12,6 +12,7 @@ from defusedxml import ElementTree as SafeXml
 from defusedxml.common import DefusedXmlException
 
 from .fabric import MAX_AIDA_COUNT, MAX_GRID_SIDE, MIN_AIDA_COUNT
+from .symbols import MAX_SYMBOLS
 from .validation import validate_document
 
 MAX_OXS_BYTES = 16 * 1024 * 1024
@@ -462,10 +463,10 @@ def import_oxs(
         cells[y * (width or 0) + x] = palette_index
         used_indices.add(palette_index)
 
-    if len(used_indices) > 64:
+    if len(used_indices) > MAX_SYMBOLS:
         report.add(
             "COLOR_BUDGET_EXCEEDED",
-            "实际使用颜色超过 PatternDocument 的 64 色上限",
+            f"实际使用颜色超过 PatternDocument 的 {MAX_SYMBOLS} 色上限",
             path="$.fullstitches",
             used=len(used_indices),
         )

@@ -37,7 +37,8 @@ jobs:
       - name: Verify production shell
         run: |
           test -f dist/index.html
-          test -f dist/favicon.svg
+          test -f dist/favicon-32.png
+          test -f dist/favicon-16.png
           test -f dist/404.html
           test -f dist/privacy.html
           test -f dist/terms.html

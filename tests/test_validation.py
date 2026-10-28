@@ -92,6 +92,14 @@ def test_palette_budget_and_missing_legend_are_rejected(minimal_document: dict) 
     assert {"PALETTE_BUDGET", "LEGEND_COMPLETE"} <= {item.rule_id for item in report.diagnostics}
 
 
+def test_imported_documents_can_preserve_more_than_64_colours(many_color_document):
+    assert validate_document(many_color_document).valid
+    many_color_document["constraints"]["color_budget"] = 4097
+    report = validate_document(many_color_document)
+    assert not report.valid
+    assert any(issue.path == "$.constraints.color_budget" for issue in report.diagnostics)
+
+
 def test_region_bounds_overlap_and_adjacency_are_rejected(minimal_document: dict) -> None:
     invalid = deepcopy(minimal_document)
     invalid["regions"][0]["spans"] = [

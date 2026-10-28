@@ -6,7 +6,9 @@ AI 辅助十字绣打版工作台：把图片转换为可编辑的针脚设计�
 
 多渠道支付配置见[支付说明](docs/payment-providers.md)；账号配置、旧图纸迁移、充值接入边界和回归方法见 [账号与计次说明](docs/accounts-and-billing.md)。已有本地图纸保留在旧工作区，需要指定目标账号迁移；不会自动归给首个注册用户。
 
-打开图纸后可通过「下载图纸」免费保存 OXS 或完整 PNG 图纸。PNG 包含彩色网格、字母符号、坐标刻度和色号对照表；下载前会保存当前修改。中文字体部署要求见[图纸下载说明](docs/accounts-and-billing.md#图纸下载)。
+打开图纸后可通过「下载图纸」免费保存 OXS、XSD 或完整 PNG 图纸。PNG 包含彩色网格、字母符号、坐标刻度和色号对照表；下载前会保存当前修改。中文字体部署要求见[图纸下载说明](docs/accounts-and-billing.md#图纸下载)。
+
+「导入 OXS / XSD」支持免费导入 Pattern Maker v4 二进制 XSD 的全针图纸；半针、回针、混线和珠绣等内容会明确阻止导入。XSD 兼容范围、文字编码、命令行用法和验证边界见 [XSD 格式说明](docs/xsd-format.md)。
 
 图片分析可接入 DeepSeek-V4.1-Flash：在项目根目录 `.env` 填写 `DEEPSEEK_API_KEY`，启动时自动读取。详见 [AI 图片分析配置](docs/ai-analysis.md)。
 

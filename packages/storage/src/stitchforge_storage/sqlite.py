@@ -184,7 +184,7 @@ class SQLiteStore:
     def initialize(self) -> None:
         with self._transaction() as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2}:
+            if version not in {0, 1, 2, 3}:
                 raise RuntimeError(f"不支持的 SQLite schema 版本: {version}")
             connection.executescript(
                 """
@@ -263,6 +263,13 @@ class SQLiteStore:
                     created_at_ms INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS project_progress (
+                    project_id TEXT PRIMARY KEY REFERENCES projects(project_id),
+                    revision_id TEXT NOT NULL REFERENCES revisions(revision_id),
+                    completed_cells_json TEXT NOT NULL,
+                    updated_at_ms INTEGER NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS artifacts (
                     workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
                     artifact_hash TEXT NOT NULL,
@@ -303,7 +310,7 @@ class SQLiteStore:
                     job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
                     PRIMARY KEY(workspace_id, request_key)
                 );
-                PRAGMA user_version = 2;
+                PRAGMA user_version = 3;
                 """
             )
 
@@ -548,6 +555,8 @@ class SQLiteStore:
                     json_array_length(r.document_json, '$.recipes') AS color_count,
                     CASE WHEN json_extract(r.document_json, '$.provenance.catalog_snapshot_id')
                         = 'oxs_embedded_palette' THEN 'oxs'
+                        WHEN json_extract(r.document_json, '$.provenance.catalog_snapshot_id')
+                        = 'xsd_embedded_palette' THEN 'xsd'
                         WHEN json_array_length(r.document_json, '$.provenance.source_asset_hashes')
                         > 0 THEN 'image' ELSE 'blank' END AS source_kind
                     FROM projects p LEFT JOIN revisions r ON r.revision_id = p.head_revision_id
