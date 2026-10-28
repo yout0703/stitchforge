@@ -10,6 +10,7 @@ import { BlankProjectDialog } from './components/BlankProjectDialog'
 import type { User } from './lib/account'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { PatternCanvas } from './components/PatternCanvas'
+import { ThreadPalette } from './components/ThreadPalette'
 import { AppSidebar } from './components/AppSidebar'
 import {
   ApiError,
@@ -93,7 +94,7 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [libraryBusy, setLibraryBusy] = useState(false)
   const [mobileCreateOpen, setMobileCreateOpen] = useState(false)
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false)
-  const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia('(max-width: 620px)').matches)
+  const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia('(max-width: 900px)').matches)
   const mobileCreateButtonRef = useRef<HTMLButtonElement>(null)
   const mobileCreateSheetRef = useRef<HTMLElement>(null)
   const mobileInspectorToggleRef = useRef<HTMLButtonElement>(null)
@@ -141,7 +142,7 @@ function App({ user, onLogout, onAccountRefresh }: {
   }, [libraryOpen])
 
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 620px)')
+    const media = window.matchMedia('(max-width: 900px)')
     function updateMobileLayout(event: MediaQueryListEvent) {
       setMobileLayout(event.matches)
       if (!event.matches) {
@@ -663,8 +664,9 @@ function App({ user, onLogout, onAccountRefresh }: {
   }
 
   return (
-    <><a className="skip-link" href="#main-content" inert={mobileLayout && mobileInspectorOpen}>跳到主要内容</a><main id="main-content" className={`workbench-shell${libraryOpen ? ' library-open' : ''}`}>
+    <><a className="skip-link" href="#main-content" inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>跳到主要内容</a><main id="main-content" className={`workbench-shell${libraryOpen ? ' library-open' : ''}`}>
       <AppSidebar
+        inert={mobileCreateOpen}
         user={user}
         libraryOpen={libraryOpen}
         busy={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
@@ -674,14 +676,14 @@ function App({ user, onLogout, onAccountRefresh }: {
         onCreateBlank={requestBlankProject}
         onOpenAccount={() => setAccountOpen(true)}
       />
-      <header className={`app-header${libraryOpen ? ' library-app-header' : ''}`} inert={mobileLayout && mobileInspectorOpen}>
+      <header className={`app-header${libraryOpen ? ' library-app-header' : ''}`} inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>
         <div className="document-title">
           <strong>{libraryOpen ? '图纸库' : document.metadata.title}</strong>
-          <span>{libraryOpen ? '查看和打开你的图纸' : mode === 'view' ? '看图绣制 · 选择线色并定位针位' : dirty ? '编辑中 · 有未保存修改' : session ? '编辑中 · 已保存到账号' : '示例预览'}</span>
+          <span>{libraryOpen ? '查看和打开你的图纸' : saveState === 'loading' ? '正在保存…' : dirty ? '有未保存修改' : session ? '已保存到账号' : '示例预览'}</span>
         </div>
         <div className="mobile-document-title">
           <h1>{libraryOpen ? '我的图纸' : document.metadata.title}</h1>
-          <span>{libraryOpen ? '查看与继续绣制' : mode === 'view' ? `${totalStitches} 针 · ${document.recipes.length} 色` : `${document.grid.width} × ${document.grid.height} 格 · ${dirty ? '未保存' : '编辑中'}`}</span>
+          <span>{libraryOpen ? '查看与继续绣制' : mode === 'view' ? `${totalStitches.toLocaleString()} 针 · ${document.recipes.length} 色 · ${dirty ? '未保存' : '已保存'}` : `${document.grid.width} × ${document.grid.height} 格 · ${dirty ? '未保存' : '已保存'}`}</span>
         </div>
         <div className="header-actions">
           {(createState === 'error' || saveState === 'error') && (
@@ -689,7 +691,7 @@ function App({ user, onLogout, onAccountRefresh }: {
           )}
           {restoreState === 'loading' && <span className="restore-state">正在恢复上次图纸…</span>}
           {restoreState === 'error' && <span className="api-error">上次图纸无法打开</span>}
-          {!libraryOpen && mode === 'edit' && <button
+          {!libraryOpen && (mode === 'edit' || dirty) && <button
             className="primary-button save-version-button"
             type="button"
             disabled={!dirty || !session || !!editor.active || saveState === 'loading'}
@@ -697,7 +699,7 @@ function App({ user, onLogout, onAccountRefresh }: {
           >
             {saveState === 'loading' ? '保存中…' : '保存版本'}
           </button>}
-          {!libraryOpen && <button className={`${mode === 'view' ? 'quiet-button' : 'primary-button'} download-button`} type="button"
+          {!libraryOpen && <button className="quiet-button download-button" type="button"
             disabled={!session || !!editor.active || saveState === 'loading' || createState === 'loading' || restoreState === 'loading' || importState === 'loading'}
             onClick={() => setDownloadOpen(true)}>
             <IconDownload aria-hidden="true" />
@@ -706,7 +708,7 @@ function App({ user, onLogout, onAccountRefresh }: {
         </div>
       </header>
 
-      <div className="workbench-notices" inert={mobileLayout && mobileInspectorOpen}>
+      <div className="workbench-notices" inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>
       {projectDraft.status.includes('失败') && <p className="draft-status api-error" role="alert">{projectDraft.status}</p>}
       {(generation.pending || generation.status || generation.error) && !(importOpen && imageGenerating) && <div className="generation-status" role="status">
         <span className={generation.running ? 'generation-live' : undefined}>{generation.status}{generation.running ? ` · ${generation.elapsedLabel}` : ''}</span>
@@ -728,7 +730,10 @@ function App({ user, onLogout, onAccountRefresh }: {
         <button type="button" disabled={saveState === 'loading'} onClick={() => { void loadServerVersion().catch(error => setSaveError(String(error))) }}>载入服务器版本</button>
       </div>}
       </div>
-      {libraryOpen ? <ProjectLibrary onOpen={openLibraryProject} onBusy={setLibraryBusy}
+      {libraryOpen ? <ProjectLibrary inert={mobileCreateOpen} onOpen={openLibraryProject} onBusy={setLibraryBusy}
+        onImportImage={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}
+        onImportPattern={() => { setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}
+        onCreateBlank={requestBlankProject}
         onRemoved={(id) => {
           if (session?.projectId === id) {
             setSession(null)
@@ -746,7 +751,7 @@ function App({ user, onLogout, onAccountRefresh }: {
             }
           }
         }} /> : <section className={`workspace-grid ${mode === 'view' ? 'reader-layout' : 'editor-layout'}`}>
-        {mode === 'edit' && <aside className="tool-rail" aria-label="绘图工具" inert={mobileLayout && mobileInspectorOpen}>
+        {mode === 'edit' && <aside className="tool-rail" aria-label="绘图工具" inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>
           {TOOLS.map((item) => {
             const ToolIcon = TOOL_ICONS[item.id]
             return (
@@ -765,7 +770,7 @@ function App({ user, onLogout, onAccountRefresh }: {
           })}
         </aside>}
 
-        <section className="canvas-stage" aria-label="图纸编辑区" inert={mobileLayout && mobileInspectorOpen}>
+        <section className="canvas-stage" aria-label="图纸编辑区" inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>
           <div className="canvas-toolbar">
             <div className="view-tabs" aria-label="视图模式">
               <button
@@ -781,6 +786,7 @@ function App({ user, onLogout, onAccountRefresh }: {
                 type="button"
                 aria-pressed={viewMode === 'source'}
                 disabled={!sourceImageUrl}
+                title={!sourceImageUrl ? '从图片生成的图纸可查看原图对照' : '并排查看原图与针格'}
                 onClick={() => setViewMode('source')}
               >
                 原图对照
@@ -903,43 +909,13 @@ function App({ user, onLogout, onAccountRefresh }: {
             </div>}
             {selection && <span className="selection-count">已选 {(selection.endCol - selection.startCol + 1) * (selection.endRow - selection.startRow + 1)} 格</span>}
           </section>
-          <section className="inspector-section">
-            <div className="section-heading">
-              <h2>线色</h2>
-              <span>{palette.length} 个配方</span>
-            </div>
-            <div className="palette-list">
-              {palette.map((recipe) => (
-                <button
-                  key={recipe.id}
-                  type="button"
-                  className={(mode === 'view' ? highlightedRecipe : selectedRecipe) === recipe.index ? 'palette-row active' : 'palette-row'}
-                  data-recipe-index={recipe.index}
-                  aria-pressed={(mode === 'view' ? highlightedRecipe : selectedRecipe) === recipe.index}
-                  onClick={() => {
-                    if (mode === 'view') {
-                      selectRecipeForReading(recipe.index)
-                    } else {
-                      setSelectedRecipe(recipe.index)
-                      setTool('paint')
-                    }
-                    if (mobileLayout) closeMobileInspector()
-                  }}
-                >
-                  <span
-                    className="thread-swatch"
-                    style={{ background: recipe.material?.color.display_srgb ?? '#B9BEC7' }}
-                  />
-                  <span className="thread-name">
-                    <strong>{showSymbols && <span className="recipe-symbol">{symbols.get(recipe.index)}</span>}{recipe.material?.brand ?? 'DMC'} {recipe.material?.code ?? '未知'}</strong>
-                    <small>{recipe.material?.name ?? '未分配材料'}</small>
-                    <small>{recipeCounts.get(recipe.index) ?? 0} 针</small>
-                  </span>
-                  <span className="strand-count">{recipe.components[0]?.strands ?? 2} 股</span>
-                </button>
-              ))}
-            </div>
-          </section>
+          <ThreadPalette key={session?.projectId ?? 'demo'} palette={palette} counts={recipeCounts} symbols={symbols}
+            selected={mode === 'view' ? highlightedRecipe : selectedRecipe} showSymbols={showSymbols} editing={mode === 'edit'}
+            onSelect={index => {
+              if (mode === 'view') selectRecipeForReading(index)
+              else { setSelectedRecipe(index); setTool('paint') }
+              if (mobileLayout) closeMobileInspector()
+            }} />
 
           {mode === 'edit' && <section className="inspector-section history-panel">
             <div className="section-heading"><h2>操作记录</h2><span>最近 100 步 · 未保存草稿可恢复</span></div>
@@ -968,13 +944,11 @@ function App({ user, onLogout, onAccountRefresh }: {
             </p>}
             {planningReport.fallback_reason && <p className="import-explanation">{planningReport.fallback_reason}</p>}
           </section>}
-          <section className="inspector-section quality-panel">
-            <div className="section-heading"><h2>还原设置</h2></div>
+          <details className="inspector-section quality-panel">
+            <summary>图纸规格与线色来源</summary>
             <dl>
               <div><dt>成品尺寸</dt><dd>{(document.grid.width / document.fabric.count * 2.54).toFixed(1)} × {(document.grid.height / document.fabric.count * 2.54).toFixed(1)} cm</dd></div>
               <div><dt>绣布规格</dt><dd>{document.fabric.count} CT</dd></div>
-              <div><dt>色差方法</dt><dd>CIEDE2000</dd></div>
-              <div><dt>邻域规则</dt><dd>4 邻域</dd></div>
               <div><dt>色库来源</dt><dd>{embeddedXsdPalette ? 'XSD 内置线色' : embeddedOxsPalette ? 'OXS 内置线色' : basicPalette ? '基础自定义颜色（非实体色卡）' : 'DMC 2021 近似色'}</dd></div>
               {conversionSummary?.statistics && conversionSummary.palette_report && conversionSummary.motif_resolution && (
                 <>
@@ -1001,10 +975,10 @@ function App({ user, onLogout, onAccountRefresh }: {
                 </>
               )}
             </dl>
-          </section>
+          </details>
         </aside>
       </section>}
-      <nav className="mobile-bottom-nav" aria-label="移动端主导航" inert={mobileLayout && mobileInspectorOpen}>
+      <nav className="mobile-bottom-nav" aria-label="移动端主导航" inert={mobileLayout && mobileInspectorOpen || mobileCreateOpen}>
         <button type="button" className={libraryOpen ? 'active' : ''} onClick={showLibrary}>
           <IconFolder size={22} aria-hidden="true" />
           <span>图纸库</span>

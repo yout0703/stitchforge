@@ -11,6 +11,7 @@ import { BrandMark } from './BrandMark'
 
 interface Props {
   user: User
+  inert?: boolean
   libraryOpen: boolean
   busy: boolean
   onShowLibrary: () => void
@@ -22,6 +23,7 @@ interface Props {
 
 export function AppSidebar({
   user,
+  inert,
   libraryOpen,
   busy,
   onShowLibrary,
@@ -33,7 +35,7 @@ export function AppSidebar({
   const initial = user.email.trim().charAt(0).toUpperCase() || 'U'
 
   return (
-    <aside className="app-sidebar" aria-label="主导航">
+    <aside className="app-sidebar" aria-label="主导航" inert={inert}>
       <div className="sidebar-brand" aria-label="StitchForge 十字绣工作台">
         <BrandMark className="sidebar-brand-mark" />
         <span>StitchForge</span>

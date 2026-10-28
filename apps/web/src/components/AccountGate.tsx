@@ -3,6 +3,7 @@ import App from '../App'
 import { accountRequest, apiFetch, type User } from '../lib/account'
 import stitchStudioHero from '../assets/stitch-studio-hero.jpg'
 import { BrandMark } from './BrandMark'
+import { EyeIcon, EyeSlashIcon } from '@phosphor-icons/react'
 
 export function AccountGate() {
   const authEpoch = useRef(0)
@@ -11,6 +12,7 @@ export function AccountGate() {
   const [register, setRegister] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const refresh = useCallback(async () => {
     const epoch = authEpoch.current
     try {
@@ -69,12 +71,14 @@ export function AccountGate() {
       <p>图纸与原图保存在你的账号下。</p>
       <form onSubmit={submit}>
         <label>邮箱<input autoComplete="username" name="email" type="email" maxLength={254} required disabled={busy} placeholder="you@example.com" /></label>
-        <label>密码<input autoComplete={register ? 'new-password' : 'current-password'} name="password" type="password" minLength={10} maxLength={128} required disabled={busy} placeholder="至少 10 个字符" /></label>
+        <label>密码<span className="password-field"><input autoComplete={register ? 'new-password' : 'current-password'} name="password" aria-label="密码" type={showPassword ? 'text' : 'password'} minLength={10} maxLength={128} required disabled={busy} placeholder="至少 10 个字符" />
+          <button type="button" aria-label={showPassword ? '隐藏密码' : '显示密码'} aria-pressed={showPassword} disabled={busy} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeSlashIcon size={20} aria-hidden="true" /> : <EyeIcon size={20} aria-hidden="true" />}</button>
+        </span></label>
         {register && <label className="consent-field"><input name="consent" type="checkbox" required disabled={busy} /><span>我已阅读并同意 <a href="/terms.html" target="_blank">服务条款</a> 与 <a href="/privacy.html" target="_blank">隐私政策</a></span></label>}
         {error && <p role="alert" className="api-error">{error}</p>}
         <button className="primary-button" disabled={busy} type="submit">{busy ? '请稍候…' : register ? '注册并开始' : '登录'}</button>
       </form>
-      <button className="account-switch" disabled={busy} onClick={() => { setRegister(!register); setError('') }}>{register ? '已有账号？去登录' : '还没有账号？免费注册'}</button>
+      <button className="account-switch" disabled={busy} onClick={() => { setRegister(!register); setError(''); setShowPassword(false) }}>{register ? '已有账号？去登录' : '还没有账号？免费注册'}</button>
       <small>注册后即可免费导入与查看 OXS / XSD；生成图片图纸需先获取次数。</small>
       <footer className="account-legal"><span>© 2026 StitchForge</span><a href="/privacy.html">隐私政策</a><a href="/terms.html">服务条款</a></footer>
     </section>

@@ -27,9 +27,13 @@ interface Props {
   onRemoved: (id: string) => void
   onRenamed: (id: string, name: string, head: string, previousHead: string) => void
   onBusy: (busy: boolean) => void
+  onImportImage: () => void
+  onImportPattern: () => void
+  onCreateBlank: () => void
+  inert?: boolean
 }
 
-export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) {
+export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy, onImportImage, onImportPattern, onCreateBlank, inert }: Props) {
   const [search, setSearch] = useState('')
   const [deleted, setDeleted] = useState(false)
   const [sort, setSort] = useState('updated')
@@ -81,6 +85,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
           return
         }
         setResult(data)
+        setError(null)
         setLoading(false)
       }).catch((reason: unknown) => {
         if (!cancelled) {
@@ -115,12 +120,12 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
   }
 
   return (
-    <section className="project-library" aria-label="图纸库">
+    <section className="project-library" aria-label="图纸库" inert={inert}>
       <div className="library-header-wrapper">
         <div className="library-heading">
           <div>
             <h1>我的图纸</h1>
-            <p>打开图纸，对照针格、查找线色并记录绣制进度。</p>
+            <p>打开图纸查线色，或创建下一件作品。</p>
           </div>
           <span className="storage-badge"><LockSimpleIcon size={14} aria-hidden="true" />仅自己可见</span>
           <div className="library-view-switcher" aria-label="图纸显示方式">
@@ -215,16 +220,26 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
         <>
           <div className="library-summary">
             <span>{deleted ? '回收站' : '图纸'} {result.total} 份{deleted && '，可随时恢复，原图和历史版本仍保留'}</span>
-            <span className="library-private-note">选择图纸查看详情</span>
+            <span className="library-private-note">点击预览查看详情，或直接打开图纸</span>
           </div>
 
           {result.items.length === 0 ? (
             <div className="library-empty">
               <div className="empty-icon-wrap">
-                <FolderOpenIcon className="empty-icon" />
+                {search ? <MagnifyingGlassIcon className="empty-icon" /> : <FolderOpenIcon className="empty-icon" />}
               </div>
               <h2>{search ? '没有找到匹配的图纸' : deleted ? '回收站是空的' : '还没有图纸'}</h2>
-              <p>{search ? '换个名称试试，或清空搜索。' : deleted ? '移除的图纸会保留在这里。' : '从左侧上传图片自动生成图纸，或导入已有的 OXS / XSD 文件。'}</p>
+              <p>{search ? `没有名称包含「${search}」的图纸，试试其他关键词。` : deleted ? '移入回收站的图纸会保留在这里，可随时恢复。' : '上传喜欢的图片，或打开已有图纸，开始你的第一件作品。'}</p>
+              <div className="library-empty-actions">
+                {search ? <button className="quiet-button" type="button" onClick={() => { setSearch(''); setOffset(0); setLoading(true) }}>清空搜索</button>
+                  : deleted ? <button className="quiet-button" type="button" onClick={() => { setDeleted(false); setOffset(0); setLoading(true) }}>返回全部图纸</button>
+                  : <>
+                    <button className="primary-button" type="button" onClick={onImportImage}><MagicWandIcon size={18} aria-hidden="true" />图片转图纸</button>
+                    <button className="quiet-button" type="button" onClick={onImportPattern}><FileCodeIcon size={18} aria-hidden="true" />导入 OXS / XSD</button>
+                    <button className="empty-blank-link" type="button" onClick={onCreateBlank}><PlusIcon size={15} aria-hidden="true" />从空白图纸开始</button>
+                  </>}
+              </div>
+              {!search && !deleted && <small className="empty-cost-note">导入与空白绘制免费 · 图片生成成功消耗 1 次</small>}
             </div>
           ) : (
             <div className={`library-content view-${view}`}>
@@ -237,6 +252,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                     <button
                       className="project-select-button"
                       type="button"
+                      aria-label={`查看 ${project.name} 详情`}
                       aria-pressed={selectedProject?.project_id === project.project_id}
                       onClick={() => setSelectedId(project.project_id)}
                       onDoubleClick={() => { if (!deleted && project.head_revision_id) void action(() => onOpen(project.project_id)) }}
@@ -273,6 +289,10 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                       </time>
                       </div>
                     </button>
+                    {!deleted && <button className="project-quick-open" type="button" disabled={busy || !project.head_revision_id}
+                      aria-label={`打开图纸 ${project.name}`} onClick={() => void action(() => onOpen(project.project_id))}>
+                      <EyeIcon size={16} aria-hidden="true" />打开图纸
+                    </button>}
                   </article>
                 )
               })}
@@ -323,7 +343,7 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy }: Props) 
                     <button className="primary-button project-continue" type="button" disabled={busy || !selectedProject.head_revision_id} onClick={() => void action(() => onOpen(selectedProject.project_id))}>
                       <EyeIcon size={19} weight="bold" aria-hidden="true" />打开图纸
                     </button>
-                    <p>进入看图绣制，可缩放、查线色并记录完成进度。</p>
+                    <p>缩放查看针格 · 高亮同色 · 随时切换编辑</p>
                   </div>
                 )}
 
