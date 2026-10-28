@@ -24,6 +24,9 @@ COPY schemas ./schemas
 RUN uv sync --frozen --no-dev --no-editable --no-cache
 COPY catalogs ./catalogs
 COPY apps/web/dist ./web
+# Normalized source archives can carry epoch mtimes. Refresh web timestamps so
+# If-Modified-Since from an older release cannot incorrectly produce a 304.
+RUN find ./web -type f -exec touch {} +
 COPY deploy ./deploy
 
 USER 10001:10001

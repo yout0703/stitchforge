@@ -47,6 +47,11 @@ Keep `STITCHFORGE_RELEASE=<release>` in `deploy/release.env` and explicitly pass
 subsequent Compose commands use the correct image. Update `current` after readiness passes.
 Validate the complete Caddy configuration before reloading it.
 
+Preserve real file modification times when creating release archives. The Docker build
+also refreshes web-file mtimes, preventing stale `If-Modified-Since` requests from receiving
+an incorrect 304 after an archive normalized timestamps to the Unix epoch. The isolated
+smoke check verifies that HTML is returned for such an old conditional request.
+
 ## Operations and rollback
 
 ```sh

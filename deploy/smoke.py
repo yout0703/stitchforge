@@ -20,6 +20,9 @@ def main():
     with httpx.Client(base_url=url, headers=headers, timeout=60) as client:
         assert client.get("/api/v1/ready").status_code == 200
         assert client.get("/").status_code == 200
+        assert client.get(
+            "/", headers={"If-Modified-Since": "Thu, 01 Jan 1970 00:00:00 GMT"}
+        ).status_code == 200, "Release HTML must be newer than an epoch-normalized archive"
         assert client.get("/missing-page").status_code == 404
         assert client.get("/api/v1/auth/me").status_code == 401
         credentials = {
