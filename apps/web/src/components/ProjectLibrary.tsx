@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { deleteProject, listProjects, renameProject, restoreProject } from '../lib/api'
 import type { LibraryProject } from '../lib/types'
+import { SelectControl } from './SelectControl'
 import {
   ArrowsClockwiseIcon,
   ClockIcon,
@@ -176,18 +177,18 @@ export function ProjectLibrary({ onOpen, onRemoved, onRenamed, onBusy, onImportI
           <div className="library-actions-group">
             <div className="select-wrapper">
               <SortAscendingIcon className="select-icon" aria-hidden="true" />
-              <select
-                aria-label="图纸排序"
+              <SelectControl
+                label="图纸排序"
                 value={sort}
                 disabled={busy}
-                onChange={(event) => {
-                  setSort(event.target.value); setOffset(0); setLoading(true); setError(null)
+                onChange={(value) => {
+                  setSort(value); setOffset(0); setLoading(true); setError(null)
                 }}
               >
                 <option value="updated">最近更新</option>
                 <option value="created">最近创建</option>
                 <option value="name">名称排序</option>
-              </select>
+              </SelectControl>
             </div>
 
             <button type="button" className="quiet-button refresh-button" aria-label="刷新图纸列表" disabled={busy} onClick={refresh}>

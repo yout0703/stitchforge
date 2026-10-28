@@ -63,7 +63,7 @@ with sync_playwright() as runner:
 
     page.route("**/api/v1/**", api)
     page.goto(os.environ.get("STITCHFORGE_WEB_URL", "http://127.0.0.1:5173"))
-    page.get_by_role("button", name="导入图片", exact=True).click()
+    page.locator(".sidebar-task-button").filter(has_text="图片转图纸").click()
     page.locator("input[type=file]").set_input_files(
         {"name": "sample.png", "mimeType": "image/png", "buffer": b"image-test"}
     )
@@ -87,7 +87,7 @@ with sync_playwright() as runner:
     page.reload()
     expect(page.get_by_text("生成时合并了 1 种近似线色，调整 4 针。", exact=True)).to_be_visible()
     assert submissions == 1
-    page.get_by_role("button", name="导入图片", exact=True).click()
+    page.locator(".sidebar-task-button").filter(has_text="图片转图纸").click()
     page.locator("input[type=file]").set_input_files(
         {"name": "second.png", "mimeType": "image/png", "buffer": b"second-test"}
     )

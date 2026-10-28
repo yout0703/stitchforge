@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MagnifyingGlassIcon, XIcon } from '@phosphor-icons/react'
 import type { Material, Recipe } from '../lib/types'
+import { SelectControl } from './SelectControl'
 
 interface Props {
   palette: (Recipe & { material?: Material })[]
@@ -31,9 +32,9 @@ export function ThreadPalette({ palette, counts, symbols, selected, showSymbols,
     </div>
     <div className="thread-list-controls">
       <span role="status">{query ? `找到 ${visible.length} 种线色` : editing ? '选择颜色后绘制' : '选择线色，高亮同色针格'}</span>
-      <select aria-label="线色排序" value={sort} onChange={event => setSort(event.target.value)}>
+      <SelectControl label="线色排序" value={sort} onChange={setSort}>
         <option value="original">原始顺序</option><option value="count">针数从多到少</option>
-      </select>
+      </SelectControl>
     </div>
     <div className="palette-list">
       {visible.map(recipe => <button key={recipe.id} type="button"

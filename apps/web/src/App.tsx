@@ -11,6 +11,9 @@ import type { User } from './lib/account'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { PatternCanvas } from './components/PatternCanvas'
 import { ThreadPalette } from './components/ThreadPalette'
+import { FilePicker } from './components/FilePicker'
+import { SelectControl } from './components/SelectControl'
+import type { StartIntent } from './lib/startIntent'
 import { AppSidebar } from './components/AppSidebar'
 import {
   ApiError,
@@ -77,8 +80,9 @@ function sourceUrlFromDocument(document: PatternDocument): string | null {
   return locator?.startsWith('/api/v1/assets/') ? locator : null
 }
 
-function App({ user, onLogout, onAccountRefresh }: {
+function App({ user, onLogout, onAccountRefresh, initialEntry, onEntryConsumed }: {
   user: User; onLogout: () => Promise<void>; onAccountRefresh: () => Promise<void>
+  initialEntry?: StartIntent | null; onEntryConsumed?: () => void
 }) {
   const generation = useGeneration(user.user_id)
   const openedGenerationJob = useRef<string | null>(null)
@@ -86,7 +90,7 @@ function App({ user, onLogout, onAccountRefresh }: {
   const LAST_PROJECT_KEY = `stitchforge.lastProjectId.${user.user_id}`
   const [accountOpen, setAccountOpen] = useState(() => window.location.hash.startsWith('#billing'))
   const [downloadOpen, setDownloadOpen] = useState(false)
-  const [blankOpen, setBlankOpen] = useState(false)
+  const [blankOpen, setBlankOpen] = useState(initialEntry?.kind === 'blank')
   const [editor, dispatch] = useReducer(editorReducer, undefined, () => createEditor(makeDemoPattern()))
   const { document } = editor
   const dirty = isDirty(editor)
@@ -122,20 +126,28 @@ function App({ user, onLogout, onAccountRefresh }: {
   const [sourceFullView, setSourceFullView] = useState(true)
   const [fitRequest, setFitRequest] = useState(0)
   const [sourceImageUrl, setSourceImageUrl] = useState<string | null>(null)
-  const [importKind, setImportKind] = useState<'image' | 'oxs'>('image')
-  const [xsdSelected, setXsdSelected] = useState(false)
+  const [importKind, setImportKind] = useState<'image' | 'oxs'>(initialEntry?.kind === 'oxs' ? 'oxs' : 'image')
+  const [importFile, setImportFile] = useState<File | null>(initialEntry?.file ?? null)
+  const xsdSelected = /\.xsd$/i.test(importFile?.name ?? '')
   const [legacyEncoding, setLegacyEncoding] = useState('cp1251')
   const [importNotice, setImportNotice] = useState<string | null>(null)
-  const [importOpen, setImportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(!!initialEntry && initialEntry.kind !== 'blank')
   const [importState, setImportState] = useState<'idle' | 'loading' | 'generating' | 'error'>('idle')
-  const importDialogRef = useRef<HTMLElement>(null)
-  const importBusyRef = useRef(false)
-  const generatingRef = useRef(false)
+  const importDialogRef = useRef<HTMLDialogElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [conversionSummary, setConversionSummary] = useState<ImageConversionResponse | null>(null)
   const [restoreState, setRestoreState] = useState<'idle' | 'loading' | 'error'>(() =>
     window.localStorage.getItem(LAST_PROJECT_KEY) ? 'loading' : 'idle',
   )
+
+  useEffect(() => {
+    if (initialEntry) onEntryConsumed?.()
+  }, [initialEntry, onEntryConsumed])
+
+  function openImport(kind: 'image' | 'oxs') {
+    setImportKind(kind); setImportFile(null); setImportError(null); setImportOpen(true)
+    if (!generation.running) setImportState('idle')
+  }
 
   useEffect(() => {
     window.history.replaceState(null, '', libraryOpen ? '#library' : '#pattern')
@@ -207,34 +219,21 @@ function App({ user, onLogout, onAccountRefresh }: {
   }, [mobileCreateOpen])
 
   useEffect(() => {
-    importBusyRef.current = importState === 'loading'
-    generatingRef.current = generation.running
-  }, [importState, generation.running])
-  useEffect(() => {
     if (!importOpen) return
-    const previousFocus = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
     const dialog = importDialogRef.current
-    dialog?.querySelector<HTMLElement>('input, button')?.focus()
-    function keepFocusInside(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        if (importBusyRef.current) return
-        if (generatingRef.current) generationPanelDismissed.current = true
-        else setImportState('idle')
-        setImportOpen(false)
-        return
-      }
-      if (event.key !== 'Tab' || !dialog) return
-      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]')]
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && window.document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && window.document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    window.document.addEventListener('keydown', keepFocusInside)
-    return () => { window.document.removeEventListener('keydown', keepFocusInside); previousFocus?.focus() }
+    dialog?.showModal()
+    return () => dialog?.close()
   }, [importOpen])
+
+  function closeImport() {
+    if (importState === 'loading') return
+    if (generation.running) generationPanelDismissed.current = true
+    else {
+      setImportState('idle')
+      if (!generation.pending) generation.acknowledge()
+    }
+    setImportOpen(false)
+  }
 
   const palette = useMemo(() => {
     const materials = new Map(document.materials.map((item) => [item.id, item]))
@@ -496,7 +495,7 @@ function App({ user, onLogout, onAccountRefresh }: {
 
   async function importImage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const file = new FormData(event.currentTarget).get('image')
+    const file = importFile
     if (!(file instanceof File) || file.size === 0) { setImportError('请选择文件'); return }
     if (dirty && !window.confirm(projectDraft.status.includes('失败')
       ? '本地草稿保存失败，继续导入会丢失未保存修改。建议取消并先保存版本，仍要继续？'
@@ -671,8 +670,8 @@ function App({ user, onLogout, onAccountRefresh }: {
         libraryOpen={libraryOpen}
         busy={libraryBusy || createState === 'loading' || saveState === 'loading' || restoreState === 'loading'}
         onShowLibrary={showLibrary}
-        onImportImage={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}
-        onImportOxs={() => { setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}
+        onImportImage={() => { openImport('image') }}
+        onImportOxs={() => { openImport('oxs') }}
         onCreateBlank={requestBlankProject}
         onOpenAccount={() => setAccountOpen(true)}
       />
@@ -731,8 +730,8 @@ function App({ user, onLogout, onAccountRefresh }: {
       </div>}
       </div>
       {libraryOpen ? <ProjectLibrary inert={mobileCreateOpen} onOpen={openLibraryProject} onBusy={setLibraryBusy}
-        onImportImage={() => { setImportKind('image'); setImportError(null); setImportOpen(true) }}
-        onImportPattern={() => { setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}
+        onImportImage={() => { openImport('image') }}
+        onImportPattern={() => { openImport('oxs') }}
         onCreateBlank={requestBlankProject}
         onRemoved={(id) => {
           if (session?.projectId === id) {
@@ -1024,10 +1023,10 @@ function App({ user, onLogout, onAccountRefresh }: {
               <button type="button" aria-label="关闭创建菜单" onClick={() => closeMobileCreate()}><XIcon size={20} aria-hidden="true" /></button>
             </div>
             <div className="mobile-create-options">
-              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('image'); setImportError(null); setImportOpen(true) }}>
+              <button type="button" onClick={() => { closeMobileCreate(false); openImport('image') }}>
                 <IconSparkles aria-hidden="true" /><span><strong>图片生成</strong><small>上传照片或插画 · 消耗 1 次</small></span>
               </button>
-              <button type="button" onClick={() => { closeMobileCreate(false); setImportKind('oxs'); setXsdSelected(false); setImportError(null); setImportOpen(true) }}>
+              <button type="button" onClick={() => { closeMobileCreate(false); openImport('oxs') }}>
                 <IconFileCode aria-hidden="true" /><span><strong>导入 OXS / XSD</strong><small>保留已有针格和线色 · 免费</small></span>
               </button>
               <button type="button" onClick={() => { closeMobileCreate(false); requestBlankProject() }}>
@@ -1038,8 +1037,8 @@ function App({ user, onLogout, onAccountRefresh }: {
         </div>
       )}
       {importOpen && (
-        <div className="import-backdrop" role="presentation">
-          <section ref={importDialogRef} className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
+          <dialog ref={importDialogRef} className="import-dialog" aria-labelledby="import-title"
+            onCancel={event => { event.preventDefault(); closeImport() }}>
             <div className="import-heading">
               <div>
                 <h2 id="import-title">{importKind === 'oxs' ? '导入 OXS / XSD 图纸' : imageGenerating ? '正在生成图纸' : '从图片自动生成图纸'}</h2>
@@ -1091,19 +1090,15 @@ function App({ user, onLogout, onAccountRefresh }: {
             <form onSubmit={importImage}>
               <p className="billing-notice">{importKind === 'oxs' ? '免费导入 · 查看与编辑不扣次数' : `本次消耗 1 次 · 当前剩余 ${user.credits} 次`}</p>
               {importKind === 'image' && user.credits < 1 && <button type="button" className="quiet-button" onClick={() => { setImportOpen(false); setAccountOpen(true) }}>查看充值与次数</button>}
-              <label className="file-field">
-                <span>{importKind === 'oxs' ? 'OXS / XSD 文件' : '效果原图'}</span>
-                <input name="image" type="file" accept={importKind === 'oxs' ? '.oxs,.xsd' : 'image/png,image/jpeg'} required disabled={importState === 'loading'}
-                  onChange={(event) => setXsdSelected(/\.xsd$/i.test(event.target.files?.[0]?.name ?? ''))} />
-                <small>{importKind === 'oxs' ? 'OXS 或 XSD，最大 16 MiB' : 'JPG 或 PNG，最大 20 MiB'}</small>
-              </label>
-              {importKind === 'oxs' && xsdSelected && <label>
+              <FilePicker kind={importKind} file={importFile} disabled={importState === 'loading'}
+                onChange={file => { setImportFile(file); setImportError(null) }} />
+              {importKind === 'oxs' && xsdSelected && <label className="file-field encoding-field">
                 <span>XSD 旧版文字编码</span>
-                <select value={legacyEncoding} disabled={importState === 'loading'} onChange={(event) => setLegacyEncoding(event.target.value)}>
+                <SelectControl label="XSD 旧版文字编码" value={legacyEncoding} disabled={importState === 'loading'} onChange={setLegacyEncoding}>
                   <option value="cp1251">俄文（默认）</option>
                   <option value="gb18030">简体中文</option>
                   <option value="cp1252">西欧文字</option>
-                </select>
+                </SelectControl>
                 <small>UTF-8 自动识别；旧文件标题或线色名称乱码时可切换后重新导入。</small>
               </label>}
               {importKind === 'image' && <p className="import-explanation">生成成功并保存后扣 1 次，失败不扣次数。根据服务配置，原图可能发送给受托模型服务商进行结构分析；详见 <a href="/privacy.html" target="_blank" rel="noopener">隐私政策</a>。</p>}
@@ -1113,14 +1108,13 @@ function App({ user, onLogout, onAccountRefresh }: {
                 <button type="button" disabled={importState === 'loading'} onClick={() => setImportOpen(false)}>
                   取消
                 </button>
-                <button className="primary-button" type="submit" disabled={importState === 'loading' || (importKind === 'image' && user.credits < 1)}>
+                <button className="primary-button" type="submit" disabled={!importFile || importState === 'loading' || (importKind === 'image' && user.credits < 1)}>
                   {importState === 'loading' ? '正在处理…' : importKind === 'oxs' ? '免费导入图纸' : '生成图纸 · 1 次'}
                 </button>
               </div>
             </form>
             )}
-          </section>
-        </div>
+          </dialog>
       )}
       {blankOpen && <BlankProjectDialog onCreate={startBlankProject} onClose={() => setBlankOpen(false)} />}
       {downloadOpen && <DownloadPanel title={document.metadata.title} dirty={dirty}
